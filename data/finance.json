@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "income": {
+    "name": "เงินเดือน",
+    "amount": 0
+  },
+  "deductions": [],
+  "expenses": []
+}

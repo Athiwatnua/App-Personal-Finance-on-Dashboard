@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f6f7f4" />
+  <title>Personal Finance on Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="Personal Finance on Dashboard"><span class="brand-mark brand-full">Personal Finance<br>on Dashboard</span></a>
+      <div class="workspace-label">Workspace&#x20;</div>
+      <nav><a class="nav-link active" data-view="record" href="#record"><span class="nav-icon">▤</span> My Finance Record</a><a class="nav-link" data-view="dashboard" href="#dashboard"><span class="nav-icon">◫</span> My Finance Dashboard</a></nav>
+      <div class="sidebar-tools"><div class="workspace-label">DATA</div><button class="nav-link" id="exportData" type="button"><span class="nav-icon">⇩</span> Export data</button><button class="nav-link" id="importData" type="button"><span class="nav-icon">⇧</span> Import data</button><input id="importFile" type="file" accept="application/json,.json" hidden></div>
+    </aside>
+    <main id="overview">
+      <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="pageCrumb">My Finance Record</strong></div><div class="top-actions"><span class="sync" id="storageStatus"><i></i> กำลังอ่านข้อมูล…</span></div></header>
+      <section class="page-heading"><div><div class="eyebrow">PERSONAL FINANCE ON DASHBOARD</div><h1 id="pageTitle">My Finance Record</h1><p id="pageDescription">จัดการรายรับ รายการหัก และบันทึกรายจ่ายของคุณ</p></div><div class="heading-actions"><label class="month-picker"><span>เดือน</span><input id="monthFilter" type="month" /></label><button class="button button-primary" id="addExpense"><span>＋</span> เพิ่มรายจ่าย</button></div></section>
+      <section class="summary-grid" id="recordSummary" aria-label="สรุปการเงิน">
+        <article class="summary-card"><div class="card-top"><span>รายรับรวม</span><span class="metric-icon green">↘</span></div><strong id="grossTotal">฿0.00</strong><small>เงินเดือนและรายรับประจำ</small></article>
+        <article class="summary-card"><div class="card-top"><span>รายการหัก</span><span class="metric-icon amber">−</span></div><strong id="deductionTotal">฿0.00</strong><small>หักหลังได้รับเงินเดือน</small></article>
+        <article class="summary-card"><div class="card-top"><span>รายรับสุทธิ</span><span class="metric-icon blue">＋</span></div><strong id="netTotal">฿0.00</strong><small>หลังหักรายการประจำ</small></article>
+        <article class="summary-card balance-card"><div class="card-top"><span>คงเหลือ</span><span class="metric-icon white">◉</span></div><strong id="balanceTotal">฿0.00</strong><small id="balanceCaption">รายรับสุทธิ − รายจ่าย</small></article>
+      </section>
+      <section class="content-grid" id="recordView">
+        <div class="panel transactions-panel" id="transactions"><div class="panel-heading"><div><h2>รายการรายจ่าย</h2><p id="expenseCount">รายการในเดือนนี้</p></div><button class="text-button" id="addExpenseSecondary">＋ เพิ่มรายการ</button></div>
+          <div class="table-wrap"><table><thead><tr><th>รายการ</th><th>หมวดหมู่</th><th>วันที่</th><th class="amount-col">จำนวนเงิน</th><th></th></tr></thead><tbody id="expenseRows"></tbody></table><div class="empty-state" id="emptyState"><div class="empty-icon">↗</div><strong>ยังไม่มีรายจ่ายในเดือนนี้</strong><span>เริ่มบันทึกรายจ่ายเพื่อดูภาพรวมการเงินของคุณ</span><button class="button button-outline" id="emptyAdd">＋ เพิ่มรายจ่ายแรก</button></div></div>
+          <div class="table-footer"><span id="tableFooter">แสดง 0 รายการ</span><span class="footer-total">รวมรายจ่าย <strong id="expensesTotal">฿0.00</strong></span></div>
+        </div>
+        <div class="right-column">
+          <section class="panel income-panel"><div class="panel-heading"><div><h2>รายรับประจำ</h2><p>ตั้งค่ารายรับที่เข้าทุกเดือน</p></div><button class="icon-button" id="editIncome" aria-label="แก้ไขรายรับ">✎</button></div><div class="income-line"><div class="income-symbol">฿</div><div class="income-copy"><span id="incomeName">เงินเดือน</span><strong id="incomeAmount">฿0.00</strong></div><span class="recurring-badge">รายเดือน</span></div><div class="section-divider"></div><div class="deduction-heading"><span>รายการหักประจำ</span><button class="text-button small-text" id="addDeduction">＋ เพิ่ม</button></div><div id="deductionList" class="deduction-list"></div></section>
+          <section class="panel breakdown-panel"><div class="panel-heading"><div><h2>สรุปรายเดือน</h2><p>ภาพรวมเงินเข้าและเงินออก</p></div></div><div class="breakdown-item"><span><i class="dot dot-green"></i>รายรับสุทธิ</span><strong id="breakdownIncome">฿0.00</strong></div><div class="breakdown-item"><span><i class="dot dot-coral"></i>รายจ่ายทั้งหมด</span><strong id="breakdownExpenses">฿0.00</strong></div><div class="breakdown-track"><span id="incomeBar"></span><span id="expenseBar"></span></div><div class="breakdown-foot"><span id="breakdownNote">เพิ่มรายรับประจำเพื่อเริ่มต้น</span><span id="expensePercent">0%</span></div></section>
+          <div class="privacy-note"><span>▣</span><p>ข้อมูลอยู่ในเบราว์เซอร์นี้ และไฟล์ JSON ในเครื่องที่เลือก</p></div>
+        </div>
+      </section>
+      <section class="dashboard-view" id="dashboardView" hidden>
+        <div class="dashboard-kpis summary-grid">
+          <article class="summary-card"><div class="card-top"><span>รายรับรวม</span><span class="metric-icon green">↘</span></div><strong id="dashGross">฿0.00</strong><small>เงินเดือนและรายรับประจำ</small></article>
+          <article class="summary-card"><div class="card-top"><span>รายการหัก</span><span class="metric-icon amber">−</span></div><strong id="dashDeductions">฿0.00</strong><small>หักหลังได้รับเงินเดือน</small></article>
+          <article class="summary-card"><div class="card-top"><span>รายรับสุทธิ</span><span class="metric-icon blue">＋</span></div><strong id="dashNet">฿0.00</strong><small>หลังหักรายการประจำ</small></article>
+          <article class="summary-card balance-card"><div class="card-top"><span>คงเหลือสิ้นเดือน</span><span class="metric-icon white">◉</span></div><strong id="dashBalance">฿0.00</strong><small>หลังหักรายจ่ายทั้งหมด</small></article>
+        </div>
+        <div class="panel chart-panel"><div class="panel-heading chart-heading"><div><h2>รายจ่ายตามหมวดหมู่และเงินคงเหลือรายวัน</h2><p id="chartSubtitle">กราฟรายวันในเดือนที่เลือก</p></div><span class="chart-month" id="chartMonth"></span></div><div id="chartLegend" class="chart-legend"></div><div class="chart-canvas" id="monthlyChart" role="img" aria-label="กราฟแท่งรายจ่ายแยกตามหมวดหมู่และกราฟเส้นแสดงเงินคงเหลือรายวัน"></div><div class="chart-foot"><span><i class="legend-line"></i>เงินคงเหลือสะสมแต่ละวัน</span><span id="chartTotal">รายจ่ายรวม ฿0.00</span></div></div>
+        <div class="panel category-panel"><div class="panel-heading"><div><h2>สัดส่วนรายจ่ายตามหมวดหมู่</h2><p>เปอร์เซ็นต์จากรายจ่ายรวมของเดือน</p></div></div><div id="categoryBreakdown" class="category-breakdown"></div></div>
+      </section>
+      <footer>PERSONAL FINANCE ON DASHBOARD <span>·</span> MANUAL MODE</footer>
+    </main>
+  </div>
+  <dialog id="expenseDialog" class="dialog"><form id="expenseForm" method="dialog"><div class="dialog-heading"><div><div class="eyebrow">TRANSACTION</div><h2 id="expenseDialogTitle">เพิ่มรายจ่าย</h2></div><button type="button" class="close-button" data-close="expenseDialog">×</button></div><input type="hidden" id="expenseId"><label>ชื่อรายการ <span class="optional">ไม่บังคับ</span><input id="expenseTitle" maxlength="80" placeholder="เว้นว่างได้"></label><div class="form-row"><label>จำนวนเงิน (บาท)<input id="expenseAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required></label><label>หมวดหมู่<select id="expenseCategory"><option>อาหาร</option><option>เดินทาง</option><option>ที่พัก</option><option>ช้อปปิ้ง</option><option>สุขภาพ</option><option>บิลและสาธารณูปโภค</option><option>บันเทิง</option><option>การศึกษา</option><option>อื่นๆ</option></select></label></div><div class="form-row"><label>วันที่<input id="expenseDate" type="date" required></label><label>หมายเหตุ <span class="optional">ไม่บังคับ</span><input id="expenseNote" maxlength="160" placeholder="เพิ่มรายละเอียด"></label></div><div class="dialog-actions"><button type="button" class="button button-quiet" data-close="expenseDialog">ยกเลิก</button><button class="button button-primary" type="submit">บันทึกรายการ</button></div></form></dialog>
+  <dialog id="incomeDialog" class="dialog"><form id="incomeForm" method="dialog"><div class="dialog-heading"><div><div class="eyebrow">MONTHLY INCOME</div><h2>ตั้งค่ารายรับประจำ</h2></div><button type="button" class="close-button" data-close="incomeDialog">×</button></div><label>ชื่อรายรับ<input id="incomeNameInput" maxlength="60" placeholder="เงินเดือน" required></label><label>จำนวนเงินต่อเดือน (บาท)<input id="incomeAmountInput" type="number" min="0" step="0.01" placeholder="0.00" required></label><div class="dialog-actions"><button type="button" class="button button-quiet" data-close="incomeDialog">ยกเลิก</button><button class="button button-primary" type="submit">บันทึก</button></div></form></dialog>
+  <dialog id="deductionDialog" class="dialog"><form id="deductionForm" method="dialog"><div class="dialog-heading"><div><div class="eyebrow">RECURRING DEDUCTION</div><h2 id="deductionDialogTitle">เพิ่มรายการหัก</h2></div><button type="button" class="close-button" data-close="deductionDialog">×</button></div><input type="hidden" id="deductionId"><label>ชื่อรายการ<input id="deductionNameInput" maxlength="60" placeholder="เช่น ประกันสังคม" required></label><label>จำนวนเงินต่อเดือน (บาท)<input id="deductionAmountInput" type="number" min="0" step="0.01" placeholder="0.00" required></label><div class="dialog-actions"><button type="button" class="button button-quiet" data-close="deductionDialog">ยกเลิก</button><button class="button button-primary" type="submit">บันทึก</button></div></form></dialog>
+  <div id="toast" role="status" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
