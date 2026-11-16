@@ -155,11 +155,28 @@
     $('deductionAmountInput').value = item?.amount ?? ''; $('deductionDialogTitle').textContent = item ? 'แก้ไขรายการหัก' : 'เพิ่มรายการหัก';
     $('deductionDialog').showModal(); $('deductionNameInput').focus();
   }
-  function downloadData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  async function downloadData() {
+    const json = JSON.stringify(state, null, 2);
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: 'personal-finance-on-dashboard.json',
+          types: [{ description: 'ไฟล์ข้อมูล JSON', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        toast(`บันทึกไฟล์ไว้ที่ ${handle.name} แล้ว`);
+      } catch (error) {
+        if (error?.name !== 'AbortError') toast('บันทึกไฟล์ JSON ไม่สำเร็จ');
+      }
+      return;
+    }
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
     link.href = url; link.download = 'personal-finance-on-dashboard.json'; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000); toast('ส่งออกข้อมูล JSON แล้ว');
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('ส่งออกข้อมูล JSON แล้ว · เลือกตำแหน่งได้จากหน้าต่างดาวน์โหลดของเบราว์เซอร์');
   }
   async function importData(file) {
     try {
@@ -178,6 +195,10 @@
   }
 
   document.querySelectorAll('[data-view]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); switchView(link.dataset.view); }));
+  $('databaseToggle').addEventListener('click', () => {
+    const open = $('databaseGroup').classList.toggle('open');
+    $('databaseToggle').setAttribute('aria-expanded', String(open));
+  });
   $('exportData').addEventListener('click', downloadData);
   $('importData').addEventListener('click', () => $('importFile').click());
   $('importFile').addEventListener('change', (event) => { if (event.target.files[0]) importData(event.target.files[0]); });
