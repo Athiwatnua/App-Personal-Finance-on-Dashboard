@@ -32,7 +32,7 @@ node server.js
 ```json
 {
   "version": 1,
-  "income": { "name": "เงินเดือน", "amount": 30000 },
+  "income": { "name": "เงินเดือน", "amount": 10000 },
   "deductions": [
     { "id": "deduction-1", "name": "ประกันสังคม", "amount": 750 }
   ],
