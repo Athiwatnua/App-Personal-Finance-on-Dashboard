@@ -9,10 +9,11 @@
   const currency = new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const amount = (value) => currency.format(value);
   const localDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const dateLabel = (date) => { const [y, m, d] = date.split('-').map(Number); return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d)); };
+  const dateLabel = (date) => { const [y, m, d] = date.split('-').map(Number); return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(y, m - 1, d)); };
   const categoryColors = ['#4f9b72', '#7a83c4', '#e19961', '#d57575', '#4b9ca0', '#ae81b9', '#86a94f', '#d087ac', '#87949b', '#b3985d'];
   const icons = { 'อาหาร': '🍜', 'เดินทาง': '🚆', 'ที่พัก': '🏠', 'ช้อปปิ้ง': '🛍️', 'สุขภาพ': '✚', 'บิลและสาธารณูปโภค': '▤', 'บันเทิง': '♫', 'การศึกษา': '▣', 'อื่นๆ': '·' };
   let state = freshState();
+  let profiles = [];
   let saveQueue = Promise.resolve();
   const monthInput = $('monthFilter');
   monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -25,27 +26,40 @@
   function setStatus(message, stateName = '') {
     const status = $('storageStatus'); status.innerHTML = `<i></i> ${esc(message)}`; status.dataset.state = stateName;
   }
+  function renderProfiles() {
+    const select = $('profileSelect');
+    select.innerHTML = profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)}</option>`).join('');
+    select.value = state.profile?.id || '';
+  }
+  function profileStatus(action, stateName) {
+    setStatus(`${action} · ${state.profile?.name || 'My Profile'}`, stateName);
+  }
   function persist() {
     const snapshot = JSON.stringify(state, null, 2);
     try { localStorage.setItem(CACHE_KEY, snapshot); } catch { /* JSON file remains the source of truth. */ }
-    setStatus('กำลังบันทึกลง data/finance.json', 'saving');
+    profileStatus('กำลังบันทึก', 'saving');
     saveQueue = saveQueue.then(async () => {
       const response = await fetch('/api/data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: snapshot });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'บันทึกข้อมูลไม่สำเร็จ');
-      setStatus('บันทึกลง data/finance.json แล้ว', 'saved');
-    }).catch((error) => { setStatus('บันทึก JSON ไม่สำเร็จ · ตรวจสอบเซิร์ฟเวอร์', 'error'); toast(error.message); });
+      profileStatus('บันทึกข้อมูลแล้ว', 'saved');
+    }).catch((error) => { profileStatus('บันทึกไม่สำเร็จ · ตรวจสอบเซิร์ฟเวอร์', 'error'); toast(error.message); });
     return saveQueue;
   }
   async function loadData() {
     try {
-      setStatus('กำลังอ่าน data/finance.json', 'loading');
+      setStatus(`กำลังอ่าน ${state.profile?.name || 'โปรไฟล์'}…`, 'loading');
+      const profileResponse = await fetch('/api/profiles', { cache: 'no-store' });
+      const profileResult = await profileResponse.json();
+      if (!profileResponse.ok) throw new Error(profileResult.error || 'อ่านรายชื่อโปรไฟล์ไม่สำเร็จ');
+      profiles = profileResult.profiles;
       const response = await fetch('/api/data', { cache: 'no-store' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'อ่านไฟล์ข้อมูลไม่สำเร็จ');
       state = result;
+      renderProfiles();
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch { /* Optional local recovery cache. */ }
-      render(); setStatus('อ่านข้อมูลจาก data/finance.json แล้ว', 'saved');
+      render(); profileStatus('พร้อมใช้งาน', 'saved');
     } catch {
       try {
         const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
@@ -82,7 +96,7 @@
     $('expensesTotal').textContent = amount(spent); $('breakdownIncome').textContent = amount(net); $('breakdownExpenses').textContent = amount(spent);
     $('expenseCount').textContent = `${expenses.length} รายการในเดือนนี้`; $('tableFooter').textContent = `แสดง ${expenses.length} รายการ`;
     $('emptyState').classList.toggle('visible', expenses.length === 0);
-    $('expenseRows').innerHTML = expenses.map((item) => `<tr class="expense-row"><td><div class="expense-name"><span class="category-icon">${icons[item.category] || '·'}</span><span>${esc(item.title || 'ไม่มีชื่อรายการ')}${item.note ? `<small class="row-note">${esc(item.note)}</small>` : ''}</span></div></td><td><span class="category-label">${esc(item.category)}</span></td><td><span class="date-label">${dateLabel(item.date)}</span></td><td class="amount">${amount(item.amount)}</td><td><div class="row-actions"><button type="button" aria-label="แก้ไข ${esc(item.title || 'รายการ')}" data-edit-expense="${esc(item.id)}">✎</button><button type="button" aria-label="ลบ ${esc(item.title || 'รายการ')}" data-delete-expense="${esc(item.id)}">×</button></div></td></tr>`).join('');
+    $('expenseRows').innerHTML = expenses.map((item) => `<tr class="expense-row"><td><div class="expense-name"><span class="category-icon">${icons[item.category] || '·'}</span><span>${esc(item.category || item.title || 'อื่นๆ')}${item.note ? `<small class="row-note">${esc(item.note)}</small>` : ''}</span></div></td><td><span class="date-label">${dateLabel(item.date)}</span></td><td class="amount">${amount(item.amount)}</td><td><div class="row-actions"><button type="button" aria-label="แก้ไข ${esc(item.category || 'รายการ')}" data-edit-expense="${esc(item.id)}">✎</button><button type="button" aria-label="ลบ ${esc(item.category || 'รายการ')}" data-delete-expense="${esc(item.id)}">×</button></div></td></tr>`).join('');
     $('deductionList').innerHTML = state.deductions.length ? state.deductions.map((item) => `<div class="deduction-item"><i class="deduction-bullet"></i><span class="deduction-name">${esc(item.name)}</span><strong class="deduction-amount">−${amount(item.amount)}</strong><span class="deduction-actions"><button type="button" title="แก้ไข" data-edit-deduction="${esc(item.id)}">✎</button><button type="button" title="ลบ" data-delete-deduction="${esc(item.id)}">×</button></span></div>`).join('') : '<div class="no-deductions">ยังไม่มีรายการหักประจำ</div>';
     const ratio = net > 0 ? Math.min(100, spent / net * 100) : spent > 0 ? 100 : 0;
     $('incomeBar').style.width = `${100 - ratio}%`; $('expenseBar').style.width = `${ratio}%`; $('expensePercent').textContent = `${Math.round(ratio)}%`;
@@ -135,20 +149,25 @@
         if (!value) return '';
         const rectY = y(offset + value), rectH = Math.max(0.75, y(offset) - rectY);
         offset += value;
-        return `<rect x="${(left + (point.day - 1) * step + (step - barWidth) / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2" fill="${colors.get(name)}"><title>${point.day} · ${esc(name)} · ${amount(value)}</title></rect>`;
+        return `<rect class="chart-bar" style="--bar-index:${point.day}" x="${(left + (point.day - 1) * step + (step - barWidth) / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2" fill="${colors.get(name)}"><title>${point.day} · ${esc(name)} · ${amount(value)}</title></rect>`;
       }).join('');
       return rects;
     }).join('');
     const linePoints = daily.map((point) => `${(left + (point.day - .5) * step).toFixed(1)},${y(point.balance).toFixed(1)}`).join(' ');
+    const range = domainMax - domainMin || 1;
+    const stop = (value) => `${Math.max(0, Math.min(100, (domainMax - value) / range * 100)).toFixed(2)}%`;
+    const gradient = netIncome > 0
+      ? `<linearGradient id="balanceGradient" gradientUnits="userSpaceOnUse" x1="${left}" y1="${y(domainMax)}" x2="${left}" y2="${y(domainMin)}"><stop offset="${stop(netIncome)}" stop-color="#3e9b68"/><stop offset="${stop(netIncome / 2)}" stop-color="#e5b940"/><stop offset="${stop(0)}" stop-color="#d85e58"/></linearGradient>`
+      : '<linearGradient id="balanceGradient"><stop offset="0%" stop-color="#d85e58"/><stop offset="100%" stop-color="#d85e58"/></linearGradient>';
     const markers = daily.map((point) => `<circle cx="${(left + (point.day - .5) * step).toFixed(1)}" cy="${y(point.balance).toFixed(1)}" r="2.1" class="balance-marker"><title>${point.day} · คงเหลือ ${amount(point.balance)}</title></circle>`).join('');
     const ticks = daily.filter((point) => point.day === 1 || point.day % 5 === 0 || point.day === daysInMonth).map((point) => `<text x="${(left + (point.day - .5) * step).toFixed(1)}" y="${height - 14}" text-anchor="middle" class="chart-axis-label">${point.day}</text>`).join('');
-    $('monthlyChart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟรายจ่ายรายวันแยกสีตามหมวดหมู่ และเส้นเงินคงเหลือปลายวัน"><text x="${left}" y="${height - 1}" class="chart-axis-caption">วันที่ของเดือน</text>${grid}<line x1="${left}" y1="${zeroY}" x2="${width - right}" y2="${zeroY}" class="chart-zero-line"/>${bars}<polyline points="${linePoints}" class="balance-line"/>${markers}${ticks}</svg>`;
+    $('monthlyChart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟรายจ่ายรายวันแยกสีตามหมวดหมู่ และเส้นเงินคงเหลือไล่สีตามสัดส่วนรายรับสุทธิ"><defs>${gradient}</defs><text x="${left}" y="${height - 1}" class="chart-axis-caption">วันที่ของเดือน</text>${grid}<line x1="${left}" y1="${zeroY}" x2="${width - right}" y2="${zeroY}" class="chart-zero-line"/>${bars}<polyline points="${linePoints}" pathLength="1" class="balance-line"/>${markers}${ticks}</svg>`;
   }
   function openExpense(item) {
-    $('expenseForm').reset(); $('expenseId').value = item?.id || ''; $('expenseTitle').value = item?.title || '';
+    $('expenseForm').reset(); $('expenseId').value = item?.id || '';
     $('expenseAmount').value = item?.amount ?? ''; $('expenseCategory').value = item?.category || 'อาหาร';
     $('expenseDate').value = item?.date || localDate(today); $('expenseNote').value = item?.note || '';
-    $('expenseDialogTitle').textContent = item ? 'แก้ไขรายจ่าย' : 'เพิ่มรายจ่าย'; $('expenseDialog').showModal(); $('expenseTitle').focus();
+    $('expenseDialogTitle').textContent = item ? 'แก้ไขรายจ่าย' : 'เพิ่มรายจ่าย'; $('expenseDialog').showModal(); $('expenseCategory').focus();
   }
   function openDeduction(item) {
     $('deductionForm').reset(); $('deductionId').value = item?.id || ''; $('deductionNameInput').value = item?.name || '';
@@ -156,11 +175,27 @@
     $('deductionDialog').showModal(); $('deductionNameInput').focus();
   }
   async function downloadData() {
-    const json = JSON.stringify(state, null, 2);
+    try {
+      await saveQueue;
+      const response = await fetch('/api/data', { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'อ่านข้อมูลจากไฟล์ไม่สำเร็จ');
+      state = result;
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch { /* Optional local recovery cache. */ }
+      render();
+    } catch (error) {
+      toast(error.message || 'อ่านข้อมูลจาก data/finance.json ไม่สำเร็จ');
+      return;
+    }
+    const profileName = state.profile?.name || 'My Profile';
+    const safeName = profileName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim().replace(/\s+/g, '-');
+    const fileName = `personal-finance-${safeName}-${localDate(new Date())}.json`;
+    const exportData = { version: 1, profile: { name: profileName }, exportedAt: new Date().toISOString(), income: state.income, deductions: state.deductions, expenses: state.expenses };
+    const json = `${JSON.stringify(exportData, null, 2)}\n`;
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: 'personal-finance-on-dashboard.json',
+          suggestedName: fileName,
           types: [{ description: 'ไฟล์ข้อมูล JSON', accept: { 'application/json': ['.json'] } }]
         });
         const writable = await handle.createWritable();
@@ -174,9 +209,9 @@
     }
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
-    link.href = url; link.download = 'personal-finance-on-dashboard.json'; link.click();
+    link.href = url; link.download = fileName; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast('ส่งออกข้อมูล JSON แล้ว · เลือกตำแหน่งได้จากหน้าต่างดาวน์โหลดของเบราว์เซอร์');
+    toast(`ส่งออก ${profileName} แล้ว`);
   }
   async function importData(file) {
     try {
@@ -187,9 +222,9 @@
       const response = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'นำเข้าข้อมูลไม่สำเร็จ');
-      state = result.data; render();
+      state = result.data; profiles = result.profiles || profiles; renderProfiles(); render();
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch { /* Optional recovery cache. */ }
-      setStatus('นำเข้าข้อมูลลง data/finance.json แล้ว', 'saved'); toast('นำเข้าข้อมูลและบันทึกลง data/finance.json แล้ว');
+      profileStatus('นำเข้าข้อมูลแล้ว', 'saved'); toast(`นำเข้าข้อมูลเป็นโปรไฟล์ ${state.profile?.name || ''} แล้ว`);
     } catch (error) { toast(error.message || 'อ่านไฟล์ JSON ไม่สำเร็จ'); }
     $('importFile').value = '';
   }
@@ -198,10 +233,32 @@
   $('databaseToggle').addEventListener('click', () => {
     const open = $('databaseGroup').classList.toggle('open');
     $('databaseToggle').setAttribute('aria-expanded', String(open));
+    $('databaseToggle').querySelector('.database-chevron').textContent = open ? '⌃' : '⌄';
   });
   $('exportData').addEventListener('click', downloadData);
   $('importData').addEventListener('click', () => $('importFile').click());
   $('importFile').addEventListener('change', (event) => { if (event.target.files[0]) importData(event.target.files[0]); });
+  $('profileSelect').addEventListener('change', async (event) => {
+    await saveQueue;
+    const response = await fetch('/api/profiles/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) });
+    if (!response.ok) { toast('เปลี่ยนโปรไฟล์ไม่สำเร็จ'); renderProfiles(); return; }
+    await loadData();
+  });
+  $('renameProfile').addEventListener('click', () => { $('profileNameInput').value = state.profile?.name || ''; $('profileDialog').showModal(); $('profileNameInput').focus(); });
+  $('profileForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); if (!$('profileForm').reportValidity()) return;
+    const response = await fetch(`/api/profiles/${encodeURIComponent(state.profile.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: $('profileNameInput').value.trim() }) });
+    const result = await response.json();
+    if (!response.ok) { toast(result.error || 'เปลี่ยนชื่อโปรไฟล์ไม่สำเร็จ'); return; }
+    state.profile.name = result.name; profiles = profiles.map((profile) => profile.id === result.id ? result : profile); renderProfiles(); profileStatus('พร้อมใช้งาน', 'saved'); $('profileDialog').close(); toast('เปลี่ยนชื่อโปรไฟล์แล้ว');
+  });
+  $('themeToggle').addEventListener('click', () => {
+    const dark = document.documentElement.classList.toggle('dark-theme');
+    localStorage.setItem('pfd-theme', dark ? 'dark' : 'light');
+    $('themeToggle').innerHTML = dark ? '☀ <span>Light</span>' : '☾ <span>Dark</span>';
+    $('themeToggle').setAttribute('aria-label', dark ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด');
+  });
+  if (localStorage.getItem('pfd-theme') === 'dark') { document.documentElement.classList.add('dark-theme'); $('themeToggle').innerHTML = '☀ <span>Light</span>'; $('themeToggle').setAttribute('aria-label', 'เปลี่ยนเป็นธีมสว่าง'); }
   $('addExpense').addEventListener('click', () => openExpense()); $('addExpenseSecondary').addEventListener('click', () => openExpense()); $('emptyAdd').addEventListener('click', () => openExpense());
   $('editIncome').addEventListener('click', () => { $('incomeNameInput').value = state.income.name; $('incomeAmountInput').value = state.income.amount || ''; $('incomeDialog').showModal(); });
   $('addDeduction').addEventListener('click', () => openDeduction()); monthInput.addEventListener('change', render);
@@ -210,7 +267,8 @@
   $('expenseForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('expenseForm').reportValidity()) return;
     const id = $('expenseId').value || crypto.randomUUID();
-    const entry = { id, title: $('expenseTitle').value.trim() || 'ไม่มีชื่อรายการ', amount: $('expenseAmount').value, category: $('expenseCategory').value, date: $('expenseDate').value, note: $('expenseNote').value.trim() };
+    const category = $('expenseCategory').value;
+    const entry = { id, title: category, amount: $('expenseAmount').value, category, date: $('expenseDate').value, note: $('expenseNote').value.trim() };
     const index = state.expenses.findIndex((item) => item.id === id);
     if (index >= 0) state.expenses[index] = entry; else state.expenses.push(entry);
     persist(); render(); $('expenseDialog').close(); toast(index >= 0 ? 'แก้ไขรายจ่ายแล้ว' : 'เพิ่มรายจ่ายแล้ว');
@@ -231,7 +289,7 @@
   $('expenseRows').addEventListener('click', (event) => {
     const edit = event.target.closest('[data-edit-expense]'), remove = event.target.closest('[data-delete-expense]');
     if (edit) openExpense(state.expenses.find((item) => item.id === edit.dataset.editExpense));
-    if (remove) { const item = state.expenses.find((x) => x.id === remove.dataset.deleteExpense); if (item && confirm(`ลบรายการ “${item.title}” หรือไม่?`)) { state.expenses = state.expenses.filter((x) => x.id !== item.id); persist(); render(); toast('ลบรายจ่ายแล้ว'); } }
+    if (remove) { const item = state.expenses.find((x) => x.id === remove.dataset.deleteExpense); if (item && confirm(`ลบรายการ “${item.category || item.title}” หรือไม่?`)) { state.expenses = state.expenses.filter((x) => x.id !== item.id); persist(); render(); toast('ลบรายจ่ายแล้ว'); } }
   });
   $('deductionList').addEventListener('click', (event) => {
     const edit = event.target.closest('[data-edit-deduction]'), remove = event.target.closest('[data-delete-deduction]');

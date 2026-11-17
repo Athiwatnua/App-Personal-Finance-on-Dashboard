@@ -5,6 +5,7 @@ const path = require('node:path');
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'finance.json');
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const PORT = Number(process.env.PFD_PORT) || 4173;
 const MAX_BODY = 2 * 1024 * 1024;
 const initialData = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, deductions: [], expenses: [] });
@@ -61,6 +62,54 @@ async function writeData(data) {
   await fs.rename(temp, DATA_FILE);
 }
 
+async function readProfiles() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    const profiles = JSON.parse(await fs.readFile(PROFILES_FILE, 'utf8'));
+    if (profiles.version === 1 && Array.isArray(profiles.profiles) && profiles.profiles.length) return profiles;
+    throw new Error('รูปแบบ profiles.json ไม่ถูกต้อง');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const profiles = { version: 1, activeProfileId: 'profile-01', profiles: [{ id: 'profile-01', name: 'My Profile 01', file: 'finance.json' }] };
+    await writeProfiles(profiles);
+    return profiles;
+  }
+}
+
+async function writeProfiles(profiles) {
+  const temp = path.join(DATA_DIR, `profiles.${process.pid}.tmp`);
+  await fs.writeFile(temp, `${JSON.stringify(profiles, null, 2)}\n`, 'utf8');
+  await fs.rename(temp, PROFILES_FILE);
+}
+
+async function readProfileData(profile) {
+  try { return cleanData(JSON.parse(await fs.readFile(path.join(DATA_DIR, profile.file), 'utf8'))); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const data = initialData();
+    await writeProfileData(profile, data);
+    return data;
+  }
+}
+
+async function writeProfileData(profile, data) {
+  const target = path.join(DATA_DIR, profile.file);
+  const temp = path.join(DATA_DIR, `${profile.id}.${process.pid}.tmp`);
+  await fs.writeFile(temp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  await fs.rename(temp, target);
+}
+
+function withProfile(data, profile) { return { ...data, profile: { id: profile.id, name: profile.name } }; }
+
+function uniqueProfileName(profiles, requested) {
+  const base = cleanText(requested, 60) || `My Profile ${String(profiles.length + 1).padStart(2, '0')}`;
+  let name = base, suffix = 2;
+  while (profiles.some((profile) => profile.name.toLocaleLowerCase() === name.toLocaleLowerCase())) name = `${base} (${suffix++})`;
+  return name;
+}
+
+function isPristineProfile(data) { return Number(data.income.amount) === 0 && data.deductions.length === 0 && data.expenses.length === 0; }
+
 function sendJson(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
@@ -83,14 +132,62 @@ const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; c
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
-    if (url.pathname === '/api/data' && req.method === 'GET') return sendJson(res, 200, await readData());
+    if (url.pathname === '/api/profiles' && req.method === 'GET') {
+      const profiles = await readProfiles();
+      return sendJson(res, 200, { activeProfileId: profiles.activeProfileId, profiles: profiles.profiles.map(({ id, name }) => ({ id, name })) });
+    }
+    if (url.pathname === '/api/profiles/active' && req.method === 'POST') {
+      const profiles = await readProfiles();
+      const input = await readBody(req);
+      if (!profiles.profiles.some((profile) => profile.id === input.id)) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์นี้' });
+      profiles.activeProfileId = input.id;
+      await writeProfiles(profiles);
+      return sendJson(res, 200, { activeProfileId: input.id });
+    }
+    const renameMatch = url.pathname.match(/^\/api\/profiles\/([a-zA-Z0-9-]+)$/);
+    if (renameMatch && req.method === 'PATCH') {
+      const profiles = await readProfiles();
+      const profile = profiles.profiles.find((item) => item.id === renameMatch[1]);
+      if (!profile) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์นี้' });
+      const input = await readBody(req);
+      const name = cleanText(input.name, 60);
+      if (!name) return sendJson(res, 400, { error: 'กรุณาระบุชื่อโปรไฟล์' });
+      profile.name = uniqueProfileName(profiles.profiles.filter((item) => item.id !== profile.id), name);
+      await writeProfiles(profiles);
+      return sendJson(res, 200, { id: profile.id, name: profile.name });
+    }
+    if (url.pathname === '/api/data' && req.method === 'GET') {
+      const profiles = await readProfiles();
+      const profile = profiles.profiles.find((item) => item.id === profiles.activeProfileId) || profiles.profiles[0];
+      profiles.activeProfileId = profile.id;
+      return sendJson(res, 200, withProfile(await readProfileData(profile), profile));
+    }
     if ((url.pathname === '/api/data' && req.method === 'PUT') || (url.pathname === '/api/import' && req.method === 'POST')) {
       const input = await readBody(req);
       let data;
-      try { data = cleanData(input); }
+      try { data = cleanData(input.data || input); }
       catch (error) { return sendJson(res, 400, { error: error.message }); }
-      await writeData(data);
-      return sendJson(res, 200, { ok: true, data });
+      const profiles = await readProfiles();
+      if (url.pathname === '/api/import') {
+        const requestedName = cleanText(input.profile?.name, 60);
+        const reusable = requestedName && profiles.profiles.find((item) => item.name.toLocaleLowerCase() === requestedName.toLocaleLowerCase());
+        const reusableData = reusable ? await readProfileData(reusable) : null;
+        const canReuse = reusable && isPristineProfile(reusableData);
+        const profile = canReuse
+          ? { ...reusable, name: requestedName }
+          : { id: `profile-${require('node:crypto').randomUUID()}`, name: uniqueProfileName(profiles.profiles, requestedName), file: `finance-${require('node:crypto').randomUUID()}.json` };
+        await writeProfileData(profile, data);
+        if (canReuse) profiles.profiles = profiles.profiles.map((item) => item.id === profile.id ? profile : item);
+        else profiles.profiles.push(profile);
+        profiles.activeProfileId = profile.id;
+        await writeProfiles(profiles);
+        return sendJson(res, 200, { ok: true, data: withProfile(data, profile), activeProfileId: profile.id, profiles: profiles.profiles.map(({ id, name }) => ({ id, name })) });
+      }
+      const profileId = input.profile?.id || profiles.activeProfileId;
+      const profile = profiles.profiles.find((item) => item.id === profileId);
+      if (!profile) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์สำหรับบันทึกข้อมูล' });
+      await writeProfileData(profile, data);
+      return sendJson(res, 200, { ok: true, data: withProfile(data, profile) });
     }
     if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'ไม่พบ API นี้' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'Method not allowed' });

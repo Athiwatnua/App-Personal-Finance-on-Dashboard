@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "activeProfileId": "profile-01",
+  "profiles": [
+    {
+      "id": "profile-01",
+      "name": "Athiwat",
+      "file": "finance.json"
+    }
+  ]
+}
