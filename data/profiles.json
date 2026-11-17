@@ -4,7 +4,7 @@
   "profiles": [
     {
       "id": "profile-01",
-      "name": "Athiwat",
+      "name": "My Profile 01",
       "file": "finance.json"
     }
   ]

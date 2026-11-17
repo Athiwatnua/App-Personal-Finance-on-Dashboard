@@ -2,79 +2,8 @@
   "version": 1,
   "income": {
     "name": "เงินเดือน",
-    "amount": 2000
+    "amount": 0
   },
-  "deductions": [
-    {
-      "id": "a6844f66-de46-49c6-90ae-7a7ec2e4e332",
-      "name": "ประกันสังคม",
-      "amount": 875
-    }
-  ],
-  "expenses": [
-    {
-      "id": "768df78b-eb40-4ef0-92b1-b8503841609d",
-      "title": "ไม่มีชื่อรายการ",
-      "amount": 100,
-      "category": "อาหาร",
-      "date": "2026-11-17",
-      "note": ""
-    },
-    {
-      "id": "2940c6fd-55b2-4cd3-a987-a39fca89c999",
-      "title": "ไม่มีชื่อรายการ",
-      "amount": 250,
-      "category": "เดินทาง",
-      "date": "2026-11-17",
-      "note": "อะไร"
-    },
-    {
-      "id": "108819da-f813-482b-8668-602fbc374df4",
-      "title": "ไม่มีชื่อรายการ",
-      "amount": 200,
-      "category": "อาหาร",
-      "date": "2026-11-18",
-      "note": ""
-    },
-    {
-      "id": "30ec4476-806a-40d9-b846-fb6cd37db8c4",
-      "title": "ไม่มีชื่อรายการ",
-      "amount": 50,
-      "category": "อาหาร",
-      "date": "2026-11-19",
-      "note": ""
-    },
-    {
-      "id": "d611a0ae-0335-4d26-88e6-4264ea42929f",
-      "title": "ไม่มีชื่อรายการ",
-      "amount": 250,
-      "category": "อาหาร",
-      "date": "2026-11-20",
-      "note": ""
-    },
-    {
-      "id": "406d2e51-690a-4d0c-bcf0-c649d028becb",
-      "title": "อาหาร",
-      "amount": 25,
-      "category": "อาหาร",
-      "date": "2026-11-19",
-      "note": ""
-    },
-    {
-      "id": "8e6b3888-206f-467b-a7a1-1d20b8ed497b",
-      "title": "อาหาร",
-      "amount": 35,
-      "category": "อาหาร",
-      "date": "2026-11-20",
-      "note": ""
-    },
-    {
-      "id": "0cb4a160-49c6-4588-bd13-f81a206577fd",
-      "title": "อาหาร",
-      "amount": 30,
-      "category": "อาหาร",
-      "date": "2026-11-22",
-      "note": ""
-    }
-  ]
+  "deductions": [],
+  "expenses": []
 }
