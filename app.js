@@ -6,16 +6,19 @@
   const positive = (value) => { const n = Number(value); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
   const validExpense = (x) => x && typeof x.id === 'string' && typeof x.title === 'string' && positive(x.amount) > 0 && typeof x.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date);
   const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const escAttr = (value) => esc(value).replace(/\n/g, '&#10;');
   const currency = new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const amount = (value) => currency.format(value);
   const localDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const dateLabel = (date) => { const [y, m, d] = date.split('-').map(Number); return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(y, m - 1, d)); };
   const categoryColors = ['#4f9b72', '#7a83c4', '#e19961', '#d57575', '#4b9ca0', '#ae81b9', '#86a94f', '#d087ac', '#87949b', '#b3985d'];
   const medicalKit = '<svg class="medical-kit-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6V4.7A1.7 1.7 0 0 1 9.7 3h4.6A1.7 1.7 0 0 1 16 4.7V6" fill="none" stroke="#c83232" stroke-width="1.7"/><rect x="3.5" y="6" width="17" height="15" rx="3" fill="#e84b4b"/><path d="M10.7 9h2.6v3.1h3.2v2.7h-3.2V18h-2.6v-3.2H7.5v-2.7h3.2z" fill="#fff"/></svg>';
-  const icons = { 'อาหาร': '🍜', 'เดินทาง': '🚆', 'ที่พัก': '🏢', 'ช้อปปิ้ง': '🛍️', 'ค่ารักษา': medicalKit, 'สุขภาพ': medicalKit, 'สาธารณูปโภค (ของใช้ประจำวัน)': '▤', 'บิลและสาธารณูปโภค': '▤', 'บันเทิง': '♫', 'การศึกษา': '▣', 'อื่นๆ': '·' };
-  const categoryLabel = (name) => ({ 'สุขภาพ': 'ค่ารักษา', 'บิลและสาธารณูปโภค': 'สาธารณูปโภค (ของใช้ประจำวัน)' }[name] || name);
+  const icons = { 'ค่าอาหาร': '🍜', 'อาหาร': '🍜', 'ค่าเดินทาง': '🚆', 'เดินทาง': '🚆', 'ค่าที่พัก': '🏢', 'ที่พัก': '🏢', 'ค่าช้อปปิ้ง': '🛍️', 'ช้อปปิ้ง': '🛍️', 'ค่ารักษา': medicalKit, 'สุขภาพ': medicalKit, 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)': '▤', 'สาธารณูปโภค (ของใช้ประจำวัน)': '▤', 'บิลและสาธารณูปโภค': '▤', 'บันเทิง': '·', 'การศึกษา': '▣', 'ค่าใช้จ่ายอื่นๆ': '·', 'อื่นๆ': '·' };
+  const categoryLabel = (name) => ({ 'อาหาร': 'ค่าอาหาร', 'เดินทาง': 'ค่าเดินทาง', 'ที่พัก': 'ค่าที่พัก', 'ช้อปปิ้ง': 'ค่าช้อปปิ้ง', 'สุขภาพ': 'ค่ารักษา', 'บิลและสาธารณูปโภค': 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)', 'สาธารณูปโภค (ของใช้ประจำวัน)': 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)', 'บันเทิง': 'ค่าใช้จ่ายอื่นๆ', 'การศึกษา': 'ค่าใช้จ่ายอื่นๆ', 'อื่นๆ': 'ค่าใช้จ่ายอื่นๆ' }[name] || name);
   let state = freshState();
   let profiles = [];
+  let chartZoom = 1;
+  let chartDrag = null;
   let saveQueue = Promise.resolve();
   const monthInput = $('monthFilter');
   monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -73,9 +76,11 @@
   }
   function switchView(view) {
     const isDashboard = view === 'dashboard';
+    $('overview').classList.toggle('dashboard-active', isDashboard);
     $('recordSummary').hidden = isDashboard;
     $('recordView').hidden = isDashboard;
     $('dashboardView').hidden = !isDashboard;
+    $('chartControls').hidden = !isDashboard;
     document.querySelectorAll('[data-view]').forEach((link) => link.classList.toggle('active', link.dataset.view === view));
     const title = isDashboard ? 'My Finance Dashboard' : 'My Finance Record';
     $('pageTitle').textContent = title; $('pageCrumb').textContent = title;
@@ -98,7 +103,7 @@
     $('expensesTotal').textContent = amount(spent); $('breakdownIncome').textContent = amount(net); $('breakdownExpenses').textContent = amount(spent);
     $('expenseCount').textContent = `${expenses.length} รายการในเดือนนี้`; $('tableFooter').textContent = `แสดง ${expenses.length} รายการ`;
     $('emptyState').classList.toggle('visible', expenses.length === 0);
-    $('expenseRows').innerHTML = expenses.map((item) => `<tr class="expense-row"><td><div class="expense-name"><span class="category-icon">${icons[item.category] || '·'}</span><span>${esc(categoryLabel(item.category || item.title || 'อื่นๆ'))}${item.note ? `<small class="row-note">${esc(item.note)}</small>` : ''}</span></div></td><td><span class="date-label">${dateLabel(item.date)}</span></td><td class="amount">${amount(item.amount)}</td><td><div class="row-actions"><button type="button" aria-label="แก้ไข ${esc(categoryLabel(item.category || 'รายการ'))}" data-edit-expense="${esc(item.id)}">✎</button><button type="button" aria-label="ลบ ${esc(categoryLabel(item.category || 'รายการ'))}" data-delete-expense="${esc(item.id)}">×</button></div></td></tr>`).join('');
+    $('expenseRows').innerHTML = expenses.map((item) => `<tr class="expense-row"><td><div class="expense-name"><span class="category-icon">${icons[categoryLabel(item.category)] || icons[item.category] || '·'}</span><span>${esc(categoryLabel(item.category || item.title || 'อื่นๆ'))}${item.note ? `<small class="row-note">${esc(item.note)}</small>` : ''}</span></div></td><td><span class="date-label">${dateLabel(item.date)}</span></td><td class="amount">${amount(item.amount)}</td><td><div class="row-actions"><button type="button" aria-label="แก้ไข ${esc(categoryLabel(item.category || 'รายการ'))}" data-edit-expense="${esc(item.id)}">✎</button><button type="button" aria-label="ลบ ${esc(categoryLabel(item.category || 'รายการ'))}" data-delete-expense="${esc(item.id)}">×</button></div></td></tr>`).join('');
     $('deductionList').innerHTML = state.deductions.length ? state.deductions.map((item) => `<div class="deduction-item"><i class="deduction-bullet"></i><span class="deduction-name">${esc(item.name)}</span><strong class="deduction-amount">−${amount(item.amount)}</strong><span class="deduction-actions"><button type="button" title="แก้ไข" data-edit-deduction="${esc(item.id)}">✎</button><button type="button" title="ลบ" data-delete-deduction="${esc(item.id)}">×</button></span></div>`).join('') : '<div class="no-deductions">ยังไม่มีรายการหักประจำ</div>';
     const ratio = net > 0 ? Math.min(100, spent / net * 100) : spent > 0 ? 100 : 0;
     $('incomeBar').style.width = `${100 - ratio}%`; $('expenseBar').style.width = `${ratio}%`; $('expensePercent').textContent = `${Math.round(ratio)}%`;
@@ -111,7 +116,7 @@
   }
   function renderCharts(expenses, year, month, daysInMonth, netIncome) {
     const totals = new Map();
-    for (const item of expenses) totals.set(item.category, (totals.get(item.category) || 0) + positive(item.amount));
+    for (const item of expenses) { const category = categoryLabel(item.category); totals.set(category, (totals.get(category) || 0) + positive(item.amount)); }
     const categories = [...totals.keys()].sort((a, b) => totals.get(b) - totals.get(a));
     const total = [...totals.values()].reduce((a, b) => a + b, 0);
     const colors = new Map(categories.map((name, index) => [name, categoryColors[index % categoryColors.length]]));
@@ -145,13 +150,15 @@
       return `<g><line x1="${left}" y1="${yy}" x2="${width - right}" y2="${yy}" class="chart-grid-line"/><text x="${left - 8}" y="${yy + 3}" text-anchor="end" class="chart-axis-label">${Math.round(value).toLocaleString('th-TH')}</text></g>`;
     }).join('');
     const bars = daily.map((point) => {
+      const date = dateLabel(`${year}-${String(month).padStart(2, '0')}-${String(point.day).padStart(2, '0')}`);
       let offset = 0;
       const rects = categories.map((name) => {
-        const value = point.expenses.filter((x) => x.category === name).reduce((sum, x) => sum + positive(x.amount), 0);
+        const value = point.expenses.filter((x) => categoryLabel(x.category) === name).reduce((sum, x) => sum + positive(x.amount), 0);
         if (!value) return '';
         const rectY = y(offset + value), rectH = Math.max(0.75, y(offset) - rectY);
         offset += value;
-        return `<rect class="chart-bar" style="--bar-index:${point.day}" x="${(left + (point.day - 1) * step + (step - barWidth) / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2" fill="${colors.get(name)}"><title>${point.day} · ${esc(categoryLabel(name))} · ${amount(value)}</title></rect>`;
+        const tooltip = `วันที่ ${date}\n${categoryLabel(name)} ${amount(value)}`;
+        return `<rect tabindex="0" aria-describedby="chartTooltip" aria-label="${escAttr(tooltip)}" data-tooltip="${escAttr(tooltip)}" class="chart-bar" style="--bar-index:${point.day}" x="${(left + (point.day - 1) * step + (step - barWidth) / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2" fill="${colors.get(name)}"/>`;
       }).join('');
       return rects;
     }).join('');
@@ -161,9 +168,24 @@
     const gradient = netIncome > 0
       ? `<linearGradient id="balanceGradient" gradientUnits="userSpaceOnUse" x1="${left}" y1="${y(domainMax)}" x2="${left}" y2="${y(domainMin)}"><stop offset="${stop(netIncome)}" stop-color="#3e9b68"/><stop offset="${stop(netIncome / 2)}" stop-color="#e5b940"/><stop offset="${stop(0)}" stop-color="#d85e58"/></linearGradient>`
       : '<linearGradient id="balanceGradient"><stop offset="0%" stop-color="#d85e58"/><stop offset="100%" stop-color="#d85e58"/></linearGradient>';
-    const markers = daily.map((point) => `<circle cx="${(left + (point.day - .5) * step).toFixed(1)}" cy="${y(point.balance).toFixed(1)}" r="2.1" class="balance-marker"><title>${point.day} · คงเหลือ ${amount(point.balance)}</title></circle>`).join('');
+    const markers = daily.map((point) => {
+      const date = dateLabel(`${year}-${String(month).padStart(2, '0')}-${String(point.day).padStart(2, '0')}`);
+      const tooltip = `วันที่ ${date}\nยอดเงินคงเหลือ ${amount(point.balance)}`;
+      return `<circle tabindex="0" aria-describedby="chartTooltip" aria-label="${escAttr(tooltip)}" data-tooltip="${escAttr(tooltip)}" cx="${(left + (point.day - .5) * step).toFixed(1)}" cy="${y(point.balance).toFixed(1)}" r="4.5" class="balance-marker"/>`;
+    }).join('');
     const ticks = daily.filter((point) => point.day === 1 || point.day % 5 === 0 || point.day === daysInMonth).map((point) => `<text x="${(left + (point.day - .5) * step).toFixed(1)}" y="${height - 14}" text-anchor="middle" class="chart-axis-label">${point.day}</text>`).join('');
-    $('monthlyChart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="กราฟรายจ่ายรายวันแยกสีตามหมวดหมู่ และเส้นเงินคงเหลือไล่สีตามสัดส่วนรายรับสุทธิ"><defs>${gradient}</defs><text x="${left}" y="${height - 1}" class="chart-axis-caption">วันที่ของเดือน</text>${grid}<line x1="${left}" y1="${zeroY}" x2="${width - right}" y2="${zeroY}" class="chart-zero-line"/>${bars}<polyline points="${linePoints}" pathLength="1" class="balance-line"/>${markers}${ticks}</svg>`;
+    $('monthlyChart').innerHTML = `<svg style="width:${(chartZoom * 100).toFixed(0)}%;min-width:${Math.max(320, 620 * chartZoom).toFixed(0)}px" viewBox="0 0 ${width} ${height}" role="group" aria-label="กราฟแท่งรายจ่ายรายวันและกราฟเส้นเงินคงเหลือ ใช้ Tab เพื่อดูรายละเอียดแต่ละจุด"><defs>${gradient}</defs><text x="${left}" y="${height - 1}" class="chart-axis-caption">วันที่ของเดือน</text>${grid}<line x1="${left}" y1="${zeroY}" x2="${width - right}" y2="${zeroY}" class="chart-zero-line"/>${bars}<polyline points="${linePoints}" pathLength="1" class="balance-line"/>${markers}${ticks}</svg>`;
+  }
+  function updateZoomButtons() {
+    $('zoomIn').disabled = chartZoom >= 3;
+    $('zoomOut').disabled = chartZoom <= 1;
+  }
+  function showChartTooltip(target, x, y) {
+    const tooltip = $('chartTooltip');
+    tooltip.textContent = target.dataset.tooltip;
+    tooltip.hidden = false;
+    tooltip.style.left = `${Math.max(8, Math.min(x + 14, window.innerWidth - tooltip.offsetWidth - 8))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(y + 14, window.innerHeight - tooltip.offsetHeight - 8))}px`;
   }
   function openExpense(item) {
     $('expenseForm').reset(); $('expenseId').value = item?.id || '';
@@ -264,6 +286,45 @@
   $('addExpense').addEventListener('click', () => openExpense()); $('addExpenseSecondary').addEventListener('click', () => openExpense()); $('emptyAdd').addEventListener('click', () => openExpense());
   $('editIncome').addEventListener('click', () => { $('incomeNameInput').value = state.income.name; $('incomeAmountInput').value = state.income.amount || ''; $('incomeDialog').showModal(); });
   $('addDeduction').addEventListener('click', () => openDeduction()); monthInput.addEventListener('change', render);
+  $('zoomIn').addEventListener('click', () => { chartZoom = Math.min(3, +(chartZoom + .25).toFixed(2)); updateZoomButtons(); render(); });
+  $('zoomOut').addEventListener('click', () => { chartZoom = Math.max(1, +(chartZoom - .25).toFixed(2)); updateZoomButtons(); render(); });
+  updateZoomButtons();
+  $('monthlyChart').addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    chartDrag = { pointerId: event.pointerId, startX: event.clientX, startScroll: $('monthlyChart').scrollLeft };
+    $('monthlyChart').setPointerCapture(event.pointerId);
+    $('monthlyChart').classList.add('dragging');
+    $('chartTooltip').hidden = true;
+  });
+  $('monthlyChart').addEventListener('pointerover', (event) => {
+    const target = event.target.closest('[data-tooltip]');
+    if (target) showChartTooltip(target, event.clientX, event.clientY);
+  });
+  $('monthlyChart').addEventListener('pointermove', (event) => {
+    if (chartDrag) {
+      const distance = event.clientX - chartDrag.startX;
+      $('monthlyChart').scrollLeft = chartDrag.startScroll - distance;
+      $('chartTooltip').hidden = true;
+      return;
+    }
+    if (!$('chartTooltip').hidden) {
+      const target = event.target.closest('[data-tooltip]');
+      if (target) showChartTooltip(target, event.clientX, event.clientY);
+    }
+  });
+  const endChartDrag = (event) => {
+    if (!chartDrag || event.pointerId !== chartDrag.pointerId) return;
+    chartDrag = null;
+    $('monthlyChart').classList.remove('dragging');
+  };
+  $('monthlyChart').addEventListener('pointerup', endChartDrag);
+  $('monthlyChart').addEventListener('pointercancel', endChartDrag);
+  $('monthlyChart').addEventListener('pointerleave', () => { $('chartTooltip').hidden = true; });
+  $('monthlyChart').addEventListener('focusin', (event) => {
+    const target = event.target.closest('[data-tooltip]');
+    if (target) { const rect = target.getBoundingClientRect(); showChartTooltip(target, rect.left + rect.width / 2, rect.top + rect.height / 2); }
+  });
+  $('monthlyChart').addEventListener('focusout', () => { $('chartTooltip').hidden = true; });
   ['monthFilter', 'expenseDate'].forEach((id) => {
     const picker = $(id);
     picker.addEventListener('click', (event) => {
