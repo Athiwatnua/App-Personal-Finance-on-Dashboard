@@ -2,8 +2,9 @@
   const CACHE_KEY = 'pfd-cache-v1';
   const today = new Date();
   const $ = (id) => document.getElementById(id);
-  const freshState = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, deductions: [], expenses: [] });
+  const freshState = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, incomeHistory: [], deductions: [], expenses: [] });
   const positive = (value) => { const n = Number(value); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
+  const moneyNumber = (value) => { const n = Number(String(value ?? '').trim().replace(',', '.')); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
   const validExpense = (x) => x && typeof x.id === 'string' && typeof x.title === 'string' && positive(x.amount) > 0 && typeof x.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date);
   const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const escAttr = (value) => esc(value).replace(/\n/g, '&#10;');
@@ -19,6 +20,11 @@
   let profiles = [];
   let chartZoom = 1;
   let chartDrag = null;
+  let moneyPadTargetId = '';
+  let moneyPadValue = '';
+  let calendarTargetId = '';
+  let calendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  let calendarMode = 'date';
   let saveQueue = Promise.resolve();
   const monthInput = $('monthFilter');
   monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -38,6 +44,25 @@
   }
   function profileStatus(action, stateName) {
     setStatus(`${action} · ${state.profile?.name || 'My Profile'}`, stateName);
+  }
+  function incomeForMonth(selectedMonth) {
+    let income = state.income;
+    for (const entry of state.incomeHistory || []) {
+      if (entry.month > selectedMonth) break;
+      income = entry;
+    }
+    return income;
+  }
+  function deductionForMonth(item, selectedMonth) {
+    let amount = positive(item.amount);
+    for (const entry of item.history || []) {
+      if (entry.month > selectedMonth) break;
+      amount = positive(entry.amount);
+    }
+    return amount;
+  }
+  function deductionIsConfiguredForMonth(item, selectedMonth) {
+    return positive(item.amount) > 0 || (item.history || []).some((entry) => entry.month <= selectedMonth);
   }
   function persist() {
     const snapshot = JSON.stringify(state, null, 2);
@@ -62,6 +87,7 @@
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'อ่านไฟล์ข้อมูลไม่สำเร็จ');
       state = result;
+      if (!Array.isArray(state.incomeHistory)) state.incomeHistory = [];
       renderProfiles();
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch { /* Optional local recovery cache. */ }
       render(); profileStatus('พร้อมใช้งาน', 'saved');
@@ -92,19 +118,21 @@
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const expenses = state.expenses.filter((item) => item.date.startsWith(selectedMonth)).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-    const gross = positive(state.income.amount);
-    const deductions = state.deductions.reduce((sum, item) => sum + positive(item.amount), 0);
+    const monthlyIncome = incomeForMonth(selectedMonth);
+    const gross = positive(monthlyIncome.amount);
+    const deductions = state.deductions.reduce((sum, item) => sum + deductionForMonth(item, selectedMonth), 0);
     const net = gross - deductions;
     const spent = expenses.reduce((sum, item) => sum + positive(item.amount), 0);
     const balance = net - spent;
 
     $('grossTotal').textContent = amount(gross); $('deductionTotal').textContent = amount(deductions); $('netTotal').textContent = amount(net); $('balanceTotal').textContent = amount(balance);
-    $('incomeName').textContent = state.income.name || 'เงินเดือน'; $('incomeAmount').textContent = amount(gross);
+    $('incomeName').textContent = monthlyIncome.name || 'เงินเดือน'; $('incomeAmount').textContent = amount(gross);
     $('expensesTotal').textContent = amount(spent); $('breakdownIncome').textContent = amount(net); $('breakdownExpenses').textContent = amount(spent);
     $('expenseCount').textContent = `${expenses.length} รายการในเดือนนี้`; $('tableFooter').textContent = `แสดง ${expenses.length} รายการ`;
     $('emptyState').classList.toggle('visible', expenses.length === 0);
     $('expenseRows').innerHTML = expenses.map((item) => `<tr class="expense-row"><td><div class="expense-name"><span class="category-icon">${icons[categoryLabel(item.category)] || icons[item.category] || '·'}</span><span>${esc(categoryLabel(item.category || item.title || 'อื่นๆ'))}${item.note ? `<small class="row-note">${esc(item.note)}</small>` : ''}</span></div></td><td><span class="date-label">${dateLabel(item.date)}</span></td><td class="amount">${amount(item.amount)}</td><td><div class="row-actions"><button type="button" aria-label="แก้ไข ${esc(categoryLabel(item.category || 'รายการ'))}" data-edit-expense="${esc(item.id)}">✎</button><button type="button" aria-label="ลบ ${esc(categoryLabel(item.category || 'รายการ'))}" data-delete-expense="${esc(item.id)}">×</button></div></td></tr>`).join('');
-    $('deductionList').innerHTML = state.deductions.length ? state.deductions.map((item) => `<div class="deduction-item"><i class="deduction-bullet"></i><span class="deduction-name">${esc(item.name)}</span><strong class="deduction-amount">−${amount(item.amount)}</strong><span class="deduction-actions"><button type="button" title="แก้ไข" data-edit-deduction="${esc(item.id)}">✎</button><button type="button" title="ลบ" data-delete-deduction="${esc(item.id)}">×</button></span></div>`).join('') : '<div class="no-deductions">ยังไม่มีรายการหักประจำ</div>';
+    const activeDeductions = state.deductions.filter((item) => deductionIsConfiguredForMonth(item, selectedMonth));
+    $('deductionList').innerHTML = activeDeductions.length ? activeDeductions.map((item) => `<div class="deduction-item" draggable="true" data-deduction-row="${esc(item.id)}" title="กดค้างแล้วลากเพื่อจัดลำดับ"><span class="deduction-drag-handle" aria-hidden="true">⠿</span><i class="deduction-bullet"></i><span class="deduction-name">${esc(item.name)}</span><strong class="deduction-amount">−${amount(deductionForMonth(item, selectedMonth))}</strong><span class="deduction-actions"><button type="button" title="แก้ไข" data-edit-deduction="${esc(item.id)}">✎</button><button type="button" title="ลบ" data-delete-deduction="${esc(item.id)}">×</button></span></div>`).join('') : '<div class="no-deductions">ยังไม่มีรายการหักประจำ</div>';
     const ratio = net > 0 ? Math.min(100, spent / net * 100) : spent > 0 ? 100 : 0;
     $('incomeBar').style.width = `${100 - ratio}%`; $('expenseBar').style.width = `${ratio}%`; $('expensePercent').textContent = `${Math.round(ratio)}%`;
     $('breakdownNote').textContent = net > 0 ? (balance >= 0 ? `เหลือ ${amount(balance)} หลังหักรายจ่าย` : `รายจ่ายเกินรายรับสุทธิ ${amount(Math.abs(balance))}`) : net < 0 ? `รายการหักสูงกว่ารายรับ ${amount(Math.abs(net))}` : 'เพิ่มรายรับประจำเพื่อเริ่มต้น';
@@ -173,11 +201,11 @@
       const tooltip = `วันที่ ${date}\nยอดเงินคงเหลือ ${amount(point.balance)}`;
       return `<circle tabindex="0" aria-describedby="chartTooltip" aria-label="${escAttr(tooltip)}" data-tooltip="${escAttr(tooltip)}" cx="${(left + (point.day - .5) * step).toFixed(1)}" cy="${y(point.balance).toFixed(1)}" r="4.5" class="balance-marker"/>`;
     }).join('');
-    const ticks = daily.filter((point) => point.day === 1 || point.day % 5 === 0 || point.day === daysInMonth).map((point) => `<text x="${(left + (point.day - .5) * step).toFixed(1)}" y="${height - 14}" text-anchor="middle" class="chart-axis-label">${point.day}</text>`).join('');
+    const ticks = daily.map((point) => `<text x="${(left + (point.day - .5) * step).toFixed(1)}" y="${height - 14}" text-anchor="middle" class="chart-axis-label${point.day % 7 === 0 ? ' chart-axis-label-major' : ''}">${point.day}</text>`).join('');
     $('monthlyChart').innerHTML = `<svg style="width:${(chartZoom * 100).toFixed(0)}%;min-width:${Math.max(320, 620 * chartZoom).toFixed(0)}px" viewBox="0 0 ${width} ${height}" role="group" aria-label="กราฟแท่งรายจ่ายรายวันและกราฟเส้นเงินคงเหลือ ใช้ Tab เพื่อดูรายละเอียดแต่ละจุด"><defs>${gradient}</defs><text x="${left}" y="${height - 1}" class="chart-axis-caption">วันที่ของเดือน</text>${grid}<line x1="${left}" y1="${zeroY}" x2="${width - right}" y2="${zeroY}" class="chart-zero-line"/>${bars}<polyline points="${linePoints}" pathLength="1" class="balance-line"/>${markers}${ticks}</svg>`;
   }
   function updateZoomButtons() {
-    $('zoomIn').disabled = chartZoom >= 3;
+    $('zoomIn').disabled = chartZoom >= 2;
     $('zoomOut').disabled = chartZoom <= 1;
   }
   function showChartTooltip(target, x, y) {
@@ -187,6 +215,51 @@
     tooltip.style.left = `${Math.max(8, Math.min(x + 14, window.innerWidth - tooltip.offsetWidth - 8))}px`;
     tooltip.style.top = `${Math.max(8, Math.min(y + 14, window.innerHeight - tooltip.offsetHeight - 8))}px`;
   }
+  function openMoneyPad(targetId) {
+    moneyPadTargetId = targetId;
+    moneyPadValue = $(targetId).value.trim().replace(',', '.');
+    $('moneyPadDisplay').textContent = moneyPadValue || '0';
+    const dialog = $('moneyPadDialog');
+    if (!dialog.open) dialog.showModal();
+  }
+  function renderMoneyPad() { $('moneyPadDisplay').textContent = moneyPadValue || '0'; }
+  function openDatePicker(targetId) {
+    calendarTargetId = targetId;
+    calendarMode = targetId === 'monthFilter' ? 'month' : 'date';
+    const selected = $(targetId).value;
+    const [year, month] = selected ? selected.split('-').map(Number) : [today.getFullYear(), today.getMonth() + 1];
+    calendarMonth = new Date(year, month - 1, 1);
+    renderDatePicker();
+    $('calendarDialog').showModal();
+  }
+  function renderDatePicker() {
+    const year = calendarMonth.getFullYear(), month = calendarMonth.getMonth();
+    $('calendarDialog').dataset.mode = calendarMode;
+    $('calendarTitle').textContent = calendarMode === 'month' ? 'เลือกเดือน' : 'เลือกวันที่';
+    $('calendarMonthLabel').textContent = new Intl.DateTimeFormat('th-TH', calendarMode === 'month' ? { year: 'numeric' } : { month: 'long', year: 'numeric' }).format(calendarMonth);
+    if (calendarMode === 'month') {
+      const current = $(calendarTargetId).value;
+      $('calendarGrid').classList.add('month-mode');
+      $('calendarGrid').innerHTML = Array.from({ length: 12 }, (_, index) => {
+        const value = `${year}-${String(index + 1).padStart(2, '0')}`;
+        const label = new Intl.DateTimeFormat('th-TH', { month: 'short' }).format(new Date(year, index, 1));
+        return `<button type="button" class="calendar-month${value === current ? ' selected' : ''}" data-calendar-month="${value}" aria-pressed="${value === current}">${label}</button>`;
+      }).join('');
+      return;
+    }
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    const selectedDate = $(calendarTargetId)?.value || '';
+    const weekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((day) => `<span class="calendar-weekday">${day}</span>`).join('');
+    const blanks = Array.from({ length: firstDay }, () => '<span class="calendar-day-empty" aria-hidden="true"></span>').join('');
+    const days = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1, value = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const selected = value === selectedDate, todayClass = value === localDate(today);
+      return `<button type="button" class="calendar-day${selected ? ' selected' : ''}${todayClass ? ' today' : ''}" data-calendar-day="${value}" aria-pressed="${selected}">${day}</button>`;
+    }).join('');
+    $('calendarGrid').innerHTML = weekdays + blanks + days;
+    $('calendarGrid').classList.remove('month-mode');
+  }
   function openExpense(item) {
     $('expenseForm').reset(); $('expenseId').value = item?.id || '';
     $('expenseAmount').value = item?.amount ?? ''; $('expenseCategory').value = categoryLabel(item?.category || 'อาหาร');
@@ -195,7 +268,8 @@
   }
   function openDeduction(item) {
     $('deductionForm').reset(); $('deductionId').value = item?.id || ''; $('deductionNameInput').value = item?.name || '';
-    $('deductionAmountInput').value = item?.amount ?? ''; $('deductionDialogTitle').textContent = item ? 'แก้ไขรายการหัก' : 'เพิ่มรายการหัก';
+    $('deductionAmountInput').value = item ? deductionForMonth(item, monthInput.value) : ''; $('deductionEffectiveMonth').value = monthInput.value;
+    $('deductionDialogTitle').textContent = item ? 'แก้ไขรายการหัก' : 'เพิ่มรายการหัก';
     $('deductionDialog').showModal(); $('deductionNameInput').focus();
   }
   async function downloadData() {
@@ -214,7 +288,7 @@
     const profileName = state.profile?.name || 'My Profile';
     const safeName = profileName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim().replace(/\s+/g, '-');
     const fileName = `personal-finance-${safeName}-${localDate(new Date())}.json`;
-    const exportData = { version: 1, profile: { name: profileName }, exportedAt: new Date().toISOString(), income: state.income, deductions: state.deductions, expenses: state.expenses };
+    const exportData = { version: 1, profile: { name: profileName }, exportedAt: new Date().toISOString(), income: state.income, incomeHistory: state.incomeHistory || [], deductions: state.deductions, expenses: state.expenses };
     const json = `${JSON.stringify(exportData, null, 2)}\n`;
     if (window.showSaveFilePicker) {
       try {
@@ -284,11 +358,49 @@
   });
   if (localStorage.getItem('pfd-theme') === 'dark') { document.documentElement.classList.add('dark-theme'); $('themeToggle').innerHTML = '☀ <span>Light</span>'; $('themeToggle').setAttribute('aria-label', 'เปลี่ยนเป็นธีมสว่าง'); }
   $('addExpense').addEventListener('click', () => openExpense()); $('addExpenseSecondary').addEventListener('click', () => openExpense()); $('emptyAdd').addEventListener('click', () => openExpense());
-  $('editIncome').addEventListener('click', () => { $('incomeNameInput').value = state.income.name; $('incomeAmountInput').value = state.income.amount || ''; $('incomeDialog').showModal(); });
+  $('editIncome').addEventListener('click', () => {
+    const effective = incomeForMonth(monthInput.value);
+    $('incomeNameInput').value = effective.name || 'เงินเดือน';
+    $('incomeAmountInput').value = effective.amount ?? '';
+    $('incomeEffectiveMonth').value = monthInput.value;
+    $('incomeDialog').showModal();
+  });
   $('addDeduction').addEventListener('click', () => openDeduction()); monthInput.addEventListener('change', render);
-  $('zoomIn').addEventListener('click', () => { chartZoom = Math.min(3, +(chartZoom + .25).toFixed(2)); updateZoomButtons(); render(); });
-  $('zoomOut').addEventListener('click', () => { chartZoom = Math.max(1, +(chartZoom - .25).toFixed(2)); updateZoomButtons(); render(); });
+  $('zoomIn').addEventListener('click', () => { chartZoom = Math.min(2, +(chartZoom + .5).toFixed(2)); updateZoomButtons(); render(); });
+  $('zoomOut').addEventListener('click', () => { chartZoom = Math.max(1, +(chartZoom - .5).toFixed(2)); updateZoomButtons(); render(); });
   updateZoomButtons();
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-money-target]');
+    if (button) {
+      event.preventDefault();
+      openMoneyPad(button.dataset.moneyTarget);
+      return;
+    }
+    const calendarButton = event.target.closest('[data-calendar-target]');
+    if (calendarButton) {
+      event.preventDefault();
+      openDatePicker(calendarButton.dataset.calendarTarget);
+    }
+  }, true);
+  $('moneyPadGrid').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-money-key]');
+    if (!button) return;
+    const key = button.dataset.moneyKey;
+    if (key === 'clear') moneyPadValue = '';
+    else if (key === 'backspace') moneyPadValue = moneyPadValue.slice(0, -1);
+    else if (key === '.') { if (!moneyPadValue.includes('.')) moneyPadValue = `${moneyPadValue || '0'}.`; }
+    else if (/^\d$/.test(key)) {
+      const decimal = moneyPadValue.split('.')[1];
+      if ((!moneyPadValue.includes('.') && moneyPadValue.length < 12) || (moneyPadValue.includes('.') && decimal.length < 2)) moneyPadValue += key;
+    }
+    renderMoneyPad();
+  });
+  $('moneyPadForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const target = $(moneyPadTargetId);
+    if (target) { target.value = moneyPadValue; target.dispatchEvent(new Event('input', { bubbles: true })); }
+    $('moneyPadDialog').close(); target?.focus();
+  });
   $('monthlyChart').addEventListener('pointerdown', (event) => {
     if (event.pointerType !== 'mouse' || event.button !== 0) return;
     chartDrag = { pointerId: event.pointerId, startX: event.clientX, startScroll: $('monthlyChart').scrollLeft };
@@ -325,7 +437,7 @@
     if (target) { const rect = target.getBoundingClientRect(); showChartTooltip(target, rect.left + rect.width / 2, rect.top + rect.height / 2); }
   });
   $('monthlyChart').addEventListener('focusout', () => { $('chartTooltip').hidden = true; });
-  ['monthFilter', 'expenseDate'].forEach((id) => {
+  ['incomeEffectiveMonth', 'deductionEffectiveMonth'].forEach((id) => {
     const picker = $(id);
     picker.addEventListener('click', (event) => {
       const rect = picker.getBoundingClientRect();
@@ -334,28 +446,65 @@
     picker.addEventListener('keydown', (event) => { if ((event.key.length === 1 && !event.ctrlKey && !event.metaKey) || event.key === 'Backspace' || event.key === 'Delete') event.preventDefault(); });
     picker.addEventListener('paste', (event) => event.preventDefault());
   });
+  document.querySelectorAll('[data-picker-target]').forEach((button) => button.addEventListener('click', () => {
+    const picker = $(button.dataset.pickerTarget);
+    try { picker.showPicker?.(); } catch { picker.focus(); }
+  }));
+  $('expenseDate').addEventListener('click', () => openDatePicker('expenseDate'));
+  $('monthFilter').addEventListener('click', () => openDatePicker('monthFilter'));
+  $('calendarPrevious').addEventListener('click', () => { if (calendarMode === 'month') calendarMonth.setFullYear(calendarMonth.getFullYear() - 1); else calendarMonth.setMonth(calendarMonth.getMonth() - 1); renderDatePicker(); });
+  $('calendarNext').addEventListener('click', () => { if (calendarMode === 'month') calendarMonth.setFullYear(calendarMonth.getFullYear() + 1); else calendarMonth.setMonth(calendarMonth.getMonth() + 1); renderDatePicker(); });
+  $('calendarGrid').addEventListener('click', (event) => {
+    const day = event.target.closest('[data-calendar-day]');
+    const monthOption = event.target.closest('[data-calendar-month]');
+    if (monthOption && calendarTargetId) {
+      const picker = $(calendarTargetId);
+      picker.value = monthOption.dataset.calendarMonth;
+      picker.dispatchEvent(new Event('input', { bubbles: true }));
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+      $('calendarDialog').close();
+      return;
+    }
+    if (!day || !calendarTargetId) return;
+    const picker = $(calendarTargetId);
+    picker.value = day.dataset.calendarDay;
+    picker.dispatchEvent(new Event('input', { bubbles: true }));
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+    $('calendarDialog').close();
+  });
   document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => $(button.dataset.close).close()));
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); }));
   $('expenseForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('expenseForm').reportValidity()) return;
+    if (moneyNumber($('expenseAmount').value) <= 0) { $('expenseAmount').setCustomValidity('จำนวนเงินต้องมากกว่า 0'); $('expenseAmount').reportValidity(); $('expenseAmount').setCustomValidity(''); return; }
     const id = $('expenseId').value || crypto.randomUUID();
     const category = $('expenseCategory').value;
-    const entry = { id, title: category, amount: $('expenseAmount').value, category, date: $('expenseDate').value, note: $('expenseNote').value.trim() };
+    const entry = { id, title: category, amount: moneyNumber($('expenseAmount').value), category, date: $('expenseDate').value, note: $('expenseNote').value.trim() };
     const index = state.expenses.findIndex((item) => item.id === id);
     if (index >= 0) state.expenses[index] = entry; else state.expenses.push(entry);
     persist(); render(); $('expenseDialog').close(); toast(index >= 0 ? 'แก้ไขรายจ่ายแล้ว' : 'เพิ่มรายจ่ายแล้ว');
   });
   $('incomeForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('incomeForm').reportValidity()) return;
-    state.income = { name: $('incomeNameInput').value.trim() || 'เงินเดือน', amount: positive($('incomeAmountInput').value) };
+    const entry = { month: $('incomeEffectiveMonth').value, name: $('incomeNameInput').value.trim() || 'เงินเดือน', amount: moneyNumber($('incomeAmountInput').value) };
+    state.incomeHistory = (state.incomeHistory || []).filter((item) => item.month !== entry.month);
+    state.incomeHistory.push(entry); state.incomeHistory.sort((a, b) => a.month.localeCompare(b.month));
     persist(); render(); $('incomeDialog').close(); toast('บันทึกรายรับประจำแล้ว');
   });
   $('deductionForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('deductionForm').reportValidity()) return;
     const id = $('deductionId').value || crypto.randomUUID();
-    const entry = { id, name: $('deductionNameInput').value.trim() || 'รายการหัก', amount: positive($('deductionAmountInput').value) };
+    const entry = { id, name: $('deductionNameInput').value.trim() || 'รายการหัก', amount: moneyNumber($('deductionAmountInput').value) };
     const index = state.deductions.findIndex((item) => item.id === id);
-    if (index >= 0) state.deductions[index] = entry; else state.deductions.push(entry);
+    if (index >= 0) {
+      const current = state.deductions[index];
+      current.name = entry.name;
+      current.history = (current.history || []).filter((item) => item.month !== $('deductionEffectiveMonth').value);
+      current.history.push({ month: $('deductionEffectiveMonth').value, amount: entry.amount });
+      current.history.sort((a, b) => a.month.localeCompare(b.month));
+    } else {
+      state.deductions.push({ ...entry, amount: 0, history: [{ month: $('deductionEffectiveMonth').value, amount: entry.amount }] });
+    }
     persist(); render(); $('deductionDialog').close(); toast(index >= 0 ? 'แก้ไขรายการหักแล้ว' : 'เพิ่มรายการหักแล้ว');
   });
   $('expenseRows').addEventListener('click', (event) => {
@@ -367,6 +516,39 @@
     const edit = event.target.closest('[data-edit-deduction]'), remove = event.target.closest('[data-delete-deduction]');
     if (edit) openDeduction(state.deductions.find((item) => item.id === edit.dataset.editDeduction));
     if (remove) { const item = state.deductions.find((x) => x.id === remove.dataset.deleteDeduction); if (item && confirm(`ลบรายการหัก “${item.name}” หรือไม่?`)) { state.deductions = state.deductions.filter((x) => x.id !== item.id); persist(); render(); toast('ลบรายการหักแล้ว'); } }
+  });
+  let draggedDeductionId = '';
+  let draggedDeductionRow = null;
+  $('deductionList').addEventListener('dragstart', (event) => {
+    const row = event.target.closest('[data-deduction-row]');
+    if (!row || event.target.closest('button')) { event.preventDefault(); return; }
+    draggedDeductionId = row.dataset.deductionRow;
+    draggedDeductionRow = row;
+    row.classList.add('dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedDeductionId);
+  });
+  $('deductionList').addEventListener('dragover', (event) => {
+    const target = event.target.closest('[data-deduction-row]');
+    if (!target || target.dataset.deductionRow === draggedDeductionId) return;
+    event.preventDefault();
+    const bounds = target.getBoundingClientRect();
+    $('deductionList').insertBefore(draggedDeductionRow, event.clientY < bounds.top + bounds.height / 2 ? target : target.nextSibling);
+  });
+  $('deductionList').addEventListener('drop', (event) => {
+    if (!draggedDeductionId) return;
+    event.preventDefault();
+    const order = [...$('deductionList').querySelectorAll('[data-deduction-row]')].map((row) => row.dataset.deductionRow);
+    const visibleIds = new Set(order);
+    const reordered = order.map((id) => state.deductions.find((item) => item.id === id)).filter(Boolean);
+    let nextVisible = 0;
+    state.deductions = state.deductions.map((item) => visibleIds.has(item.id) ? reordered[nextVisible++] : item);
+    persist();
+  });
+  $('deductionList').addEventListener('dragend', () => {
+    $('deductionList').querySelectorAll('.dragging').forEach((row) => row.classList.remove('dragging'));
+    draggedDeductionId = '';
+    draggedDeductionRow = null;
   });
   render();
   loadData();

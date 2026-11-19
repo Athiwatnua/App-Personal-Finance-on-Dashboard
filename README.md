@@ -28,21 +28,24 @@ node server.js
 - **Export data** อ่านข้อมูลล่าสุดทั้งหมดจากโปรไฟล์ที่เลือก แล้วดาวน์โหลดสำเนา JSON ชื่อ `personal-finance-<ชื่อโปรไฟล์>-<YYYY-MM-DD>.json` ซึ่งรวมรายรับ รายการหัก และรายจ่ายทั้งหมด
 - **Import data** เลือกไฟล์ JSON ที่ส่งออกไว้ เพื่อสร้างโปรไฟล์ใหม่จากไฟล์นั้น แล้วสลับมาใช้โปรไฟล์ใหม่ทันที
 
-ไฟล์นำเข้าต้องเป็น JSON schema version 1 ตัวอย่าง:
+ไฟล์นำเข้าต้องเป็น JSON schema version 1 ประวัติใน `incomeHistory` เป็นยอดรายรับที่มีผลตั้งแต่เดือนนั้นเป็นต้นไป ส่วน `deductions[].history` เก็บยอดรายการหักที่มีผลตั้งแต่เดือนนั้นเป็นต้นไป เดือนก่อนหน้าใช้ยอดเดิม ตัวอย่าง:
 
 ```json
 {
   "version": 1,
   "income": { "name": "เงินเดือน", "amount": 10000 },
+  "incomeHistory": [
+    { "month": "2026-12", "name": "เงินเดือน", "amount": 12000 }
+  ],
   "deductions": [
-    { "id": "deduction-1", "name": "ประกันสังคม", "amount": 750 }
+    { "id": "deduction-1", "name": "ประกันสังคม", "amount": 0, "history": [{ "month": "2026-11", "amount": 750 }] }
   ],
   "expenses": [
     {
       "id": "expense-1",
       "title": "ค่าเดินทาง",
       "amount": 120,
-      "category": "เดินทาง",
+      "category": "ค่าเดินทาง",
       "date": "2026-11-17",
       "note": ""
     }

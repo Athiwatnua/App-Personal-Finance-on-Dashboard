@@ -8,7 +8,7 @@ const DATA_FILE = path.join(DATA_DIR, 'finance.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const PORT = Number(process.env.PFD_PORT) || 4173;
 const MAX_BODY = 2 * 1024 * 1024;
-const initialData = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, deductions: [], expenses: [] });
+const initialData = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, incomeHistory: [], deductions: [], expenses: [] });
 
 function cleanText(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -24,12 +24,27 @@ function cleanData(input) {
   if (!input || input.version !== 1 || !input.income || !Array.isArray(input.deductions) || !Array.isArray(input.expenses)) {
     throw new Error('รูปแบบ JSON ไม่ถูกต้อง หรือไม่ใช่ schema version 1');
   }
+  const incomeHistory = input.incomeHistory === undefined ? [] : input.incomeHistory;
+  if (!Array.isArray(incomeHistory)) throw new Error('ประวัติรายรับไม่ถูกต้อง');
+  const incomeByMonth = new Map();
+  for (const item of incomeHistory) {
+    if (!item || typeof item.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month)) throw new Error('เดือนในประวัติรายรับไม่ถูกต้อง');
+    incomeByMonth.set(item.month, { month: item.month, name: cleanText(item.name, 60) || 'เงินเดือน', amount: cleanAmount(item.amount) });
+  }
   return {
     version: 1,
     income: { name: cleanText(input.income.name, 60) || 'เงินเดือน', amount: cleanAmount(input.income.amount) },
+    incomeHistory: [...incomeByMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
     deductions: input.deductions.map((item) => {
       if (!item || typeof item.id !== 'string' || !item.id) throw new Error('รายการหักมีข้อมูลไม่ครบ');
-      return { id: cleanText(item.id, 100), name: cleanText(item.name, 60) || 'รายการหัก', amount: cleanAmount(item.amount) };
+      const history = item.history === undefined ? [] : item.history;
+      if (!Array.isArray(history)) throw new Error('ประวัติรายการหักไม่ถูกต้อง');
+      const amountsByMonth = new Map();
+      for (const entry of history) {
+        if (!entry || typeof entry.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(entry.month)) throw new Error('เดือนในประวัติรายการหักไม่ถูกต้อง');
+        amountsByMonth.set(entry.month, { month: entry.month, amount: cleanAmount(entry.amount) });
+      }
+      return { id: cleanText(item.id, 100), name: cleanText(item.name, 60) || 'รายการหัก', amount: cleanAmount(item.amount), history: [...amountsByMonth.values()].sort((a, b) => a.month.localeCompare(b.month)) };
     }),
     expenses: input.expenses.map((item) => {
       if (!item || typeof item.id !== 'string' || !item.id || typeof item.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) throw new Error('รายจ่ายมีข้อมูลไม่ครบ');
