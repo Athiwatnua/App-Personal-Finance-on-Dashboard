@@ -72,9 +72,9 @@ node server.js
 {
   "version": 1,
   "profile": { "name": "บัญชีส่วนตัว" },
-  "income": { "name": "เงินเดือน", "amount": 30000 },
+  "income": { "name": "เงินเดือน", "amount": 10000 },
   "incomeHistory": [
-    { "month": "2026-12", "name": "เงินเดือน", "amount": 32000 }
+    { "month": "2026-12", "name": "เงินเดือน", "amount": 12000 }
   ],
   "deductions": [
     {
