@@ -55,32 +55,32 @@
 - จำนวนเงินที่เป็นบวกจะถูกนำเข้าเป็นรายจ่าย ยอดรายจ่ายคำนวณจาก `amount + fee`
 - วันที่ทำรายการเป็นวันที่รายจ่าย ส่วนเวลา บัญชี ค่าธรรมเนียม และยอดคงเหลือเก็บไว้ในหมายเหตุ
 - รายการที่ซ้ำในโปรไฟล์จะถูกข้าม โดยตรวจจากข้อมูลธุรกรรม เช่น วันที่ เวลา บัญชี จำนวนเงิน ค่าธรรมเนียม และยอดคงเหลือ
-- เก็บ JSON ต้นฉบับใน `data/imports/` โดยใช้ชื่อ `import-email-kplus-DD-MM-YYYY.json` และปี พ.ศ. เช่น `import-email-kplus-24-11-2569.json` หากมีไฟล์ชื่อเดิมแล้วจะเติมเลขท้ายชื่อเพื่อไม่เขียนทับ
+- เก็บ JSON ต้นฉบับใน `data/imports/` โดยใช้ชื่อ `import-email-kplus-DD-MM-YYYY.json` และปี พ.ศ. หากมีไฟล์ชื่อเดิมแล้วจะเติมเลขท้ายชื่อเพื่อไม่เขียนทับ
 
-ตัวอย่างรูปแบบไฟล์ที่รองรับ:
+ตัวอย่างต่อไปนี้เป็นข้อมูลสมมุติทั้งหมด ใช้เพื่อแสดงรูปแบบไฟล์เท่านั้น:
 
 ```json
 {
   "source": "K_PLUS",
-  "account_alias": "Main Account",
+  "account_alias": "ตัวอย่างบัญชี",
   "currency": "THB",
-  "report_date": "2026-11-19",
+  "report_date": "2026-01-15",
   "transactions": [
     {
-      "transaction_date": "2026-11-19",
-      "transaction_time": "07:52:56",
-      "account": "xxx-x-x0507-x",
-      "amount": 300.00,
+      "transaction_date": "2026-01-15",
+      "transaction_time": "09:00:00",
+      "account": "xxx-x-x0000-x",
+      "amount": 1000.00,
       "fee": 0.00,
-      "available_balance": 742.42
+      "available_balance": 10000.00
     },
     {
-      "transaction_date": "2026-11-19",
-      "transaction_time": "13:51:46",
-      "account": "xxx-x-x0507-x",
-      "amount": 62.00,
+      "transaction_date": "2026-01-15",
+      "transaction_time": "10:30:00",
+      "account": "xxx-x-x0000-x",
+      "amount": 250.00,
       "fee": 0.00,
-      "available_balance": 680.42
+      "available_balance": 9750.00
     }
   ]
 }
@@ -119,6 +119,8 @@ node server.js
 
 ตัวอย่างโครงสร้าง:
 
+ตัวอย่างนี้ใช้ข้อมูลสมมุติทั้งหมด ยอด `1000` เป็นตัวเลขสาธิต ไม่ใช่ข้อมูลบัญชีจริง
+
 ```json
 {
   "version": 1,
@@ -128,10 +130,10 @@ node server.js
   "deductions": [
     {
       "id": "deduction-1",
-      "name": "ประกันสังคม",
+      "name": "ตัวอย่างรายการหัก",
       "amount": 0,
       "history": [
-        { "month": "2026-11", "amount": 0 }
+        { "month": "2026-01", "amount": 0 }
       ]
     }
   ],
@@ -139,9 +141,9 @@ node server.js
     {
       "id": "expense-1",
       "title": "ค่าเดินทาง",
-      "amount": 120,
+      "amount": 1000,
       "category": "ค่าเดินทาง",
-      "date": "2026-11-17",
+      "date": "2026-01-15",
       "note": ""
     }
   ]
