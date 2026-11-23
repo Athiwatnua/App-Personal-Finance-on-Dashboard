@@ -4,6 +4,26 @@
     "name": "เงินเดือน",
     "amount": 0
   },
-  "deductions": [],
+  "incomeHistory": [
+    {
+      "month": "2026-11",
+      "name": "เงินเดือน",
+      "amount": 10000
+    }
+  ],
+  "deductions": [
+    {
+      "id": "cce19fb9-0ea0-495e-93b4-116b0b5ef4f7",
+      "optionId": "deduction-social-security",
+      "name": "ประกันสังคม",
+      "amount": 0,
+      "history": [
+        {
+          "month": "2026-11",
+          "amount": 875
+        }
+      ]
+    }
+  ],
   "expenses": []
 }

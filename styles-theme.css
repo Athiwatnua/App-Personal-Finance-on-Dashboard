@@ -122,3 +122,70 @@ dialog[open]::backdrop{animation:backdrop-in .1s ease-out both;backdrop-filter:n
   .calendar-toolbar{grid-template-columns:40px 1fr 40px;gap:8px}
   .calendar-toolbar button{width:38px;height:38px}
 }
+
+.settings-view{display:grid;gap:18px}
+.settings-intro{padding:4px 0}
+.settings-intro h2{margin:0 0 6px;font-size:17px;color:#26352b}
+.settings-intro p{margin:0;color:#748077;font-size:12px;line-height:1.7}
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.settings-panel{padding:20px}
+.settings-panel .panel-heading{padding:0 0 15px}
+.settings-panel .panel-heading h2{font-size:14px}
+.settings-panel .panel-heading p{font-size:10px}
+.settings-add-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;padding-bottom:15px;border-bottom:1px solid #edf0ed}
+.settings-add-form label{display:grid;gap:6px;font-size:10px;color:#5f6962}
+.settings-add-form input,.setting-row input{width:100%;height:38px;min-width:0;border:1px solid #e2e7e2;border-radius:6px;padding:0 10px;background:#fff;color:#333b35;font:inherit;font-size:12px;outline:none}
+.settings-add-form input:focus,.setting-row input:focus{border-color:#6caa81;box-shadow:0 0 0 3px #e6f3e9}
+.settings-add-form .button,.setting-row .button{min-height:38px;padding:0 12px;font-size:11px;white-space:nowrap}
+.settings-list{display:grid;gap:8px;padding-top:12px}
+.setting-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px}
+.setting-row .setting-delete-button{border-color:#e4c3bf;color:#a5413a;background:#fff8f7}
+.setting-row .setting-delete-button:hover{border-color:#cc766e;background:#fff0ee}
+.settings-empty{margin:0;padding:10px 2px;color:#879188;font-size:11px}
+.settings-active .heading-actions{display:none}
+.dark-theme .settings-intro h2{color:#edf4ee}
+.dark-theme .settings-intro p,.dark-theme .settings-empty{color:#a9b5ab}
+.dark-theme .settings-add-form{border-color:#344137}
+.dark-theme .settings-add-form input,.dark-theme .setting-row input{border-color:#3c4b40;background:#202a23;color:#edf4ee}
+.dark-theme .settings-add-form input:focus,.dark-theme .setting-row input:focus{border-color:#739b7d;box-shadow:0 0 0 3px #253b2b}
+.dark-theme .setting-row .setting-delete-button{border-color:#61423f;color:#f0aca6;background:#372725}
+@media(max-width:850px){.settings-grid{grid-template-columns:1fr}}
+@media(max-width:520px){.settings-panel{padding:15px}.settings-add-form{grid-template-columns:1fr}.settings-add-form .button{justify-self:start}.setting-row{grid-template-columns:minmax(0,1fr) auto}.setting-row input{grid-column:1/-1}.setting-row .button{grid-row:2}.setting-row .setting-delete-button{grid-column:2}}
+
+@media(max-width:800px){.sidebar nav .database-toggle{width:40px;justify-content:center;padding:0;gap:0}.sidebar nav .database-label,.sidebar nav .database-chevron{display:none}.sidebar nav .database-submenu-inner{padding-left:0}.sidebar nav .submenu-link{width:40px;justify-content:center;padding:0;font-size:0;gap:0}.sidebar nav .database-group.open .database-submenu{max-height:86px}}
+.setting-row{position:relative;transition:transform .16s cubic-bezier(.2,.8,.2,1),opacity .16s ease,box-shadow .16s ease}
+.setting-row{grid-template-columns:30px minmax(0,1fr) auto auto}
+.setting-row.dragging{z-index:2;opacity:.9;transform:scale(1.015);box-shadow:0 8px 22px #17251b20;border-radius:8px;background:#fff}
+.setting-drag-handle{width:30px;height:36px;border:1px solid #e0e6e1;border-radius:6px;background:#f7f9f7;color:#839087;font-size:18px;line-height:1;cursor:grab;touch-action:none;user-select:none}
+.setting-drag-handle:active{cursor:grabbing}
+.dark-theme .setting-row.dragging{background:#202a23;box-shadow:0 8px 22px #0005}
+.dark-theme .setting-drag-handle{border-color:#3b493f;background:#202a23;color:#aab7ad}
+.import-type-content{padding:24px}
+.import-type-content .dialog-heading{margin-bottom:12px}
+.import-type-option{width:100%;display:grid;gap:5px;padding:14px;margin:9px 0;border:1px solid #e0e6e1;border-radius:9px;background:#fff;text-align:left;color:#344138;transition:background .16s,border-color .16s,transform .16s}
+.import-type-option:hover{border-color:#83b895;background:#f3f8f4;transform:translateY(-1px)}
+.import-type-option strong{font-size:13px}
+.import-type-option span,.kplus-preview-summary,.kplus-import-note{font-size:11px;color:#7b867d;line-height:1.6}
+.kplus-preview-dialog{width:min(540px,calc(100% - 28px))}
+.kplus-preview-dialog form{padding:26px}
+.kplus-preview-dialog .dialog label{font-size:11px}
+.kplus-preview-summary{margin:0 0 14px}
+.kplus-transaction-preview{max-height:220px;overflow:auto;padding:8px 12px;border:1px solid #e8ece8;border-radius:8px;background:#fafbf9}
+.kplus-preview-row,.kplus-preview-total{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #edf0ed;font-size:11px;color:#657067}
+.kplus-preview-row strong,.kplus-preview-total strong{color:#344138;font-variant-numeric:tabular-nums}
+.kplus-transaction-preview>p{font-size:10px;color:#89938b}
+.kplus-preview-total{padding-top:11px;border:0;font-weight:700}
+.kplus-import-note{margin:12px 0 0}
+.dark-theme .import-type-option{border-color:#3b493f;background:#202a23;color:#e5ede6}
+.dark-theme .import-type-option:hover{border-color:#739b7d;background:#26372d}
+.dark-theme .kplus-transaction-preview{border-color:#344137;background:#171e19}
+.dark-theme .kplus-preview-row,.dark-theme .kplus-preview-total{border-color:#344137;color:#aeb8b0}
+.dark-theme .kplus-preview-row strong,.dark-theme .kplus-preview-total strong{color:#e2ebe4}
+.dark-theme .import-type-option span,.dark-theme .kplus-preview-summary,.dark-theme .kplus-import-note{color:#a9b5ab}
+@media(max-width:520px){.setting-row{grid-template-columns:30px minmax(0,1fr) auto}.setting-row input{grid-column:2;grid-row:1}.setting-row [type=submit]{grid-column:2;grid-row:2}.setting-row .setting-delete-button{grid-column:3;grid-row:2}}
+.sidebar nav .database-toggle{width:100%;border:0;background:transparent;text-align:left;font-family:inherit}
+.sidebar nav .database-toggle:hover{background:#f1f5f1;color:#176b4a}
+.dark-theme .sidebar nav .database-toggle:hover{background:#26372d;color:#9bd1ab}
+.deduction-item{position:relative;transition:transform .18s cubic-bezier(.2,.8,.2,1),opacity .16s ease,box-shadow .16s ease,background-color .16s ease}
+.deduction-item.dragging{z-index:2;opacity:.9;transform:scale(1.015);background:#f7faf7;box-shadow:0 6px 16px #17251b1a;border-radius:6px}
+.dark-theme .deduction-item.dragging{background:#26372d;box-shadow:0 6px 16px #0004}

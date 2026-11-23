@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -6,9 +7,27 @@ const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'finance.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const PORT = Number(process.env.PFD_PORT) || 4173;
 const MAX_BODY = 2 * 1024 * 1024;
 const initialData = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, incomeHistory: [], deductions: [], expenses: [] });
+const initialSettings = () => ({
+  version: 1,
+  expenseCategories: [
+    { id: 'category-food', name: 'ค่าอาหาร' },
+    { id: 'category-travel', name: 'ค่าเดินทาง' },
+    { id: 'category-housing', name: 'ค่าที่พัก' },
+    { id: 'category-shopping', name: 'ค่าช้อปปิ้ง' },
+    { id: 'category-medical', name: 'ค่ารักษา' },
+    { id: 'category-utilities', name: 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)' },
+    { id: 'category-other', name: 'ค่าใช้จ่ายอื่นๆ' }
+  ],
+  deductionOptions: [
+    { id: 'deduction-social-security', name: 'ประกันสังคม' },
+    { id: 'deduction-credit-card', name: 'บัตรเครดิต' },
+    { id: 'deduction-cash-card', name: 'บัตรกดเงินสด' }
+  ]
+});
 
 function cleanText(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -18,6 +37,98 @@ function cleanAmount(value, allowZero = true) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0 || (!allowZero && amount === 0)) throw new Error('จำนวนเงินไม่ถูกต้อง');
   return Math.round(amount * 100) / 100;
+}
+
+function cleanSettings(input) {
+  if (!input || input.version !== 1 || !Array.isArray(input.expenseCategories) || !Array.isArray(input.deductionOptions)) {
+    throw new Error('รูปแบบการตั้งค่าไม่ถูกต้อง หรือไม่ใช่ schema version 1');
+  }
+  const cleanOptions = (items, label, maxNameLength) => {
+    const ids = new Set(), names = new Set();
+    return items.map((item) => {
+      if (!item || typeof item.id !== 'string') throw new Error(`${label} มีข้อมูลไม่ครบ`);
+      const id = cleanText(item.id, 100), name = cleanText(item.name, maxNameLength);
+      if (!id || !name) throw new Error(`${label} ต้องมีรหัสและชื่อ`);
+      const normalizedName = name.toLocaleLowerCase();
+      if (ids.has(id) || names.has(normalizedName)) throw new Error(`${label} ห้ามมีรหัสหรือชื่อซ้ำ`);
+      ids.add(id); names.add(normalizedName);
+      return { id, name };
+    });
+  };
+  return {
+    version: 1,
+    expenseCategories: cleanOptions(input.expenseCategories, 'หมวดหมู่รายจ่าย', 60),
+    deductionOptions: cleanOptions(input.deductionOptions, 'ตัวเลือกรายการหัก', 60)
+  };
+}
+
+async function readSettings() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try { return cleanSettings(JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8'))); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const settings = initialSettings();
+    await writeSettings(settings);
+    return settings;
+  }
+}
+
+async function writeSettings(settings) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const temp = path.join(DATA_DIR, `settings.${process.pid}.${crypto.randomUUID()}.tmp`);
+  await fs.writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  await fs.rename(temp, SETTINGS_FILE);
+}
+
+function validIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function cleanKplusReport(report) {
+  if (!report || report.source !== 'K_PLUS' || report.currency !== 'THB' || !validIsoDate(report.report_date) || !Array.isArray(report.transactions) || !report.transactions.length || report.transactions.length > 5000) {
+    throw new Error('รูปแบบ K PLUS JSON ไม่ถูกต้อง หรือไม่มี transactions');
+  }
+  return report.transactions.map((transaction) => {
+    if (!transaction || !validIsoDate(transaction.transaction_date) || typeof transaction.transaction_time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(transaction.transaction_time) || typeof transaction.account !== 'string' || !cleanText(transaction.account, 80)) {
+      throw new Error('ข้อมูลวันที่ เวลา หรือบัญชีในธุรกรรมไม่ถูกต้อง');
+    }
+    const amount = cleanAmount(transaction.amount, false);
+    const fee = cleanAmount(transaction.fee ?? 0);
+    const balance = cleanAmount(transaction.available_balance);
+    const hash = crypto.createHash('sha256').update([report.source, transaction.transaction_date, transaction.transaction_time, transaction.account, amount, fee, balance].join('|')).digest('hex');
+    const time = transaction.transaction_time.slice(0, 5);
+    return {
+      id: `kplus-${hash}`,
+      title: `K+ · ${time}`,
+      amount: Math.round((amount + fee) * 100) / 100,
+      date: transaction.transaction_date,
+      transactionTime: transaction.transaction_time,
+      account: cleanText(transaction.account, 80),
+      fee,
+      availableBalance: balance
+    };
+  });
+}
+
+async function archiveKplusReport(report, importedAt) {
+  if (!validIsoDate(importedAt)) throw new Error('วันที่นำเข้าไม่ถูกต้อง');
+  const [year, month, day] = importedAt.split('-').map(Number);
+  const baseName = `import-email-kplus-${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year + 543}`;
+  const importDir = path.join(DATA_DIR, 'imports');
+  await fs.mkdir(importDir, { recursive: true });
+  const content = `${JSON.stringify(report, null, 2)}\n`;
+  for (let suffix = 1; suffix <= 1000; suffix++) {
+    const fileName = `${baseName}${suffix === 1 ? '' : `-${suffix}`}.json`;
+    try {
+      await fs.writeFile(path.join(importDir, fileName), content, { encoding: 'utf8', flag: 'wx' });
+      return fileName;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+  }
+  throw new Error('สร้างชื่อไฟล์นำเข้าไม่สำเร็จ');
 }
 
 function cleanData(input) {
@@ -44,13 +155,14 @@ function cleanData(input) {
         if (!entry || typeof entry.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(entry.month)) throw new Error('เดือนในประวัติรายการหักไม่ถูกต้อง');
         amountsByMonth.set(entry.month, { month: entry.month, amount: cleanAmount(entry.amount) });
       }
-      return { id: cleanText(item.id, 100), name: cleanText(item.name, 60) || 'รายการหัก', amount: cleanAmount(item.amount), history: [...amountsByMonth.values()].sort((a, b) => a.month.localeCompare(b.month)) };
+      return { id: cleanText(item.id, 100), ...(typeof item.optionId === 'string' && cleanText(item.optionId, 100) ? { optionId: cleanText(item.optionId, 100) } : {}), name: cleanText(item.name, 60) || 'รายการหัก', amount: cleanAmount(item.amount), history: [...amountsByMonth.values()].sort((a, b) => a.month.localeCompare(b.month)) };
     }),
     expenses: input.expenses.map((item) => {
       if (!item || typeof item.id !== 'string' || !item.id || typeof item.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) throw new Error('รายจ่ายมีข้อมูลไม่ครบ');
       return {
         id: cleanText(item.id, 100), title: cleanText(item.title, 80) || 'ไม่มีชื่อรายการ',
-        amount: cleanAmount(item.amount, false), category: cleanText(item.category, 40) || 'อื่นๆ',
+        amount: cleanAmount(item.amount, false), category: cleanText(item.category, 60) || 'อื่นๆ',
+        ...(typeof item.categoryId === 'string' && cleanText(item.categoryId, 100) ? { categoryId: cleanText(item.categoryId, 100) } : {}),
         date: item.date, note: cleanText(item.note, 160)
       };
     })
@@ -147,6 +259,16 @@ const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; c
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
+    if (url.pathname === '/api/settings' && req.method === 'GET') {
+      return sendJson(res, 200, { settings: await readSettings() });
+    }
+    if (url.pathname === '/api/settings' && req.method === 'PUT') {
+      let settings;
+      try { settings = cleanSettings(await readBody(req)); }
+      catch (error) { return sendJson(res, 400, { error: error.message }); }
+      await writeSettings(settings);
+      return sendJson(res, 200, { ok: true, settings });
+    }
     if (url.pathname === '/api/profiles' && req.method === 'GET') {
       const profiles = await readProfiles();
       return sendJson(res, 200, { activeProfileId: profiles.activeProfileId, profiles: profiles.profiles.map(({ id, name }) => ({ id, name })) });
@@ -158,6 +280,36 @@ const server = http.createServer(async (req, res) => {
       profiles.activeProfileId = input.id;
       await writeProfiles(profiles);
       return sendJson(res, 200, { activeProfileId: input.id });
+    }
+    if (url.pathname === '/api/import/kplus' && req.method === 'POST') {
+      const input = await readBody(req);
+      let transactions;
+      try { transactions = cleanKplusReport(input.report); }
+      catch (error) { return sendJson(res, 400, { error: error.message }); }
+      const settings = await readSettings();
+      const category = settings.expenseCategories.find((item) => item.id === input.categoryId);
+      if (!category) return sendJson(res, 400, { error: 'กรุณาเลือกหมวดหมู่รายจ่ายที่ยังใช้งานอยู่' });
+      const profiles = await readProfiles();
+      const profile = profiles.profiles.find((item) => item.id === profiles.activeProfileId) || profiles.profiles[0];
+      if (!profile) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์สำหรับนำเข้าข้อมูล' });
+      const fileName = await archiveKplusReport(input.report, input.importedAt);
+      const data = await readProfileData(profile);
+      const existingIds = new Set(data.expenses.map((item) => item.id));
+      const expenses = transactions.filter((item) => !existingIds.has(item.id)).map((item) => ({
+        id: item.id,
+        title: item.title,
+        amount: item.amount,
+        category: category.name,
+        categoryId: category.id,
+        date: item.date,
+        note: `K PLUS · บัญชี ${item.account} · เวลา ${item.transactionTime} · ค่าธรรมเนียม ${item.fee.toFixed(2)} · คงเหลือ ${item.availableBalance.toFixed(2)}`
+      }));
+      const uniqueExpenses = [...new Map(expenses.map((item) => [item.id, item])).values()];
+      const skipped = transactions.length - uniqueExpenses.length;
+      data.expenses.push(...uniqueExpenses);
+      const clean = cleanData(data);
+      await writeProfileData(profile, clean);
+      return sendJson(res, 200, { ok: true, data: withProfile(clean, profile), added: uniqueExpenses.length, skipped, fileName });
     }
     const renameMatch = url.pathname.match(/^\/api\/profiles\/([a-zA-Z0-9-]+)$/);
     if (renameMatch && req.method === 'PATCH') {

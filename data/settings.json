@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "expenseCategories": [
+    {
+      "id": "category-food",
+      "name": "ค่าอาหาร"
+    },
+    {
+      "id": "category-travel",
+      "name": "ค่าเดินทาง"
+    },
+    {
+      "id": "category-housing",
+      "name": "ค่าที่พัก"
+    },
+    {
+      "id": "category-shopping",
+      "name": "ค่าช้อปปิ้ง"
+    },
+    {
+      "id": "category-medical",
+      "name": "ค่ารักษา"
+    },
+    {
+      "id": "category-utilities",
+      "name": "ค่าสาธารณูปโภค (ของใช้ประจำวัน)"
+    },
+    {
+      "id": "category-other",
+      "name": "ค่าใช้จ่ายอื่นๆ"
+    }
+  ],
+  "deductionOptions": [
+    {
+      "id": "deduction-social-security",
+      "name": "ประกันสังคม"
+    },
+    {
+      "id": "deduction-credit-card",
+      "name": "บัตรเครดิต"
+    },
+    {
+      "id": "deduction-cash-card",
+      "name": "บัตรกดเงินสด"
+    }
+  ]
+}

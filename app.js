@@ -1,8 +1,15 @@
 (() => {
   const CACHE_KEY = 'pfd-cache-v1';
+  const SETTINGS_CACHE_KEY = 'pfd-settings-v1';
   const today = new Date();
   const $ = (id) => document.getElementById(id);
   const freshState = () => ({ version: 1, income: { name: 'เงินเดือน', amount: 0 }, incomeHistory: [], deductions: [], expenses: [] });
+  const freshSettings = () => ({ version: 1, expenseCategories: [
+    { id: 'category-food', name: 'ค่าอาหาร' }, { id: 'category-travel', name: 'ค่าเดินทาง' }, { id: 'category-housing', name: 'ค่าที่พัก' },
+    { id: 'category-shopping', name: 'ค่าช้อปปิ้ง' }, { id: 'category-medical', name: 'ค่ารักษา' }, { id: 'category-utilities', name: 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)' }, { id: 'category-other', name: 'ค่าใช้จ่ายอื่นๆ' }
+  ], deductionOptions: [
+    { id: 'deduction-social-security', name: 'ประกันสังคม' }, { id: 'deduction-credit-card', name: 'บัตรเครดิต' }, { id: 'deduction-cash-card', name: 'บัตรกดเงินสด' }
+  ] });
   const positive = (value) => { const n = Number(value); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
   const moneyNumber = (value) => { const n = Number(String(value ?? '').trim().replace(/,/g, '')); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
   const validExpense = (x) => x && typeof x.id === 'string' && typeof x.title === 'string' && positive(x.amount) > 0 && typeof x.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date);
@@ -17,6 +24,10 @@
   const icons = { 'ค่าอาหาร': '🍜', 'อาหาร': '🍜', 'ค่าเดินทาง': '🚆', 'เดินทาง': '🚆', 'ค่าที่พัก': '🏢', 'ที่พัก': '🏢', 'ค่าช้อปปิ้ง': '🛍️', 'ช้อปปิ้ง': '🛍️', 'ค่ารักษา': medicalKit, 'สุขภาพ': medicalKit, 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)': '▤', 'สาธารณูปโภค (ของใช้ประจำวัน)': '▤', 'บิลและสาธารณูปโภค': '▤', 'บันเทิง': '·', 'การศึกษา': '▣', 'ค่าใช้จ่ายอื่นๆ': '·', 'อื่นๆ': '·' };
   const categoryLabel = (name) => ({ 'อาหาร': 'ค่าอาหาร', 'เดินทาง': 'ค่าเดินทาง', 'ที่พัก': 'ค่าที่พัก', 'ช้อปปิ้ง': 'ค่าช้อปปิ้ง', 'สุขภาพ': 'ค่ารักษา', 'บิลและสาธารณูปโภค': 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)', 'สาธารณูปโภค (ของใช้ประจำวัน)': 'ค่าสาธารณูปโภค (ของใช้ประจำวัน)', 'บันเทิง': 'ค่าใช้จ่ายอื่นๆ', 'การศึกษา': 'ค่าใช้จ่ายอื่นๆ', 'อื่นๆ': 'ค่าใช้จ่ายอื่นๆ' }[name] || name);
   let state = freshState();
+  let settingsState = freshSettings();
+  let settingsSaveQueue = Promise.resolve();
+  let draggedSetting = null;
+  let pendingKplusReport = null;
   let profiles = [];
   let chartZoom = 1;
   let chartDrag = null;
@@ -93,6 +104,92 @@
     $('deleteConfirmMessage').textContent = message;
     $('deleteConfirmDialog').showModal();
   }
+  function renderExpenseCategoryOptions(selectedValue = '', selectedId = '') {
+    const select = $('expenseCategory');
+    const categories = settingsState.expenseCategories || [];
+    const selected = selectedValue || categories[0]?.name || '';
+    const exists = categories.some((item) => item.name === selected);
+    const savedCategory = selected && !exists
+      ? `<option value="${esc(selected)}" data-category-id="${esc(selectedId)}">${esc(selected)} (ข้อมูลเดิม)</option>`
+      : '';
+    const current = categories.map((item) => `<option value="${esc(item.name)}" data-category-id="${esc(item.id)}">${esc(item.name)}</option>`).join('');
+    select.innerHTML = `${savedCategory}${current}${!selected && !categories.length ? '<option value="">เพิ่มหมวดหมู่ใน Setting ก่อน</option>' : ''}`;
+    select.value = selected;
+    select.disabled = !categories.length && !savedCategory;
+  }
+  function renderDeductionOptions(item = null) {
+    const select = $('deductionOptionSelect');
+    const options = settingsState.deductionOptions || [];
+    const matchedOption = item?.optionId
+      ? options.find((option) => option.id === item.optionId)
+      : options.find((option) => option.name === item?.name);
+    const selectedExists = Boolean(matchedOption);
+    const needsSavedSnapshot = item && (!matchedOption || matchedOption.name !== item.name);
+    const legacy = needsSavedSnapshot ? `<option value="__saved__">${esc(item.name)} (ชื่อที่บันทึกไว้)</option>` : '';
+    const current = options.map((option) => `<option value="${esc(option.id)}">${esc(option.name)}</option>`).join('');
+    select.innerHTML = `${legacy}${current}${!item && !options.length ? '<option value="">เพิ่มตัวเลือกใน Setting ก่อน</option>' : ''}`;
+    select.value = needsSavedSnapshot ? '__saved__' : selectedExists ? matchedOption.id : '';
+    select.disabled = Boolean(item) || !options.length;
+  }
+  function renderSettings() {
+    const renderRows = (items, kind, listId) => {
+      $(listId).innerHTML = items.length ? items.map((item) => `<form class="setting-row" data-setting-form="${kind}" data-setting-id="${esc(item.id)}"><button class="setting-drag-handle" type="button" data-setting-drag aria-label="กดค้างแล้วลากเพื่อจัดลำดับ ${esc(item.name)}" title="กดค้างแล้วลากเพื่อจัดลำดับ">⠿</button><input aria-label="ชื่อ${kind === 'category' ? 'หมวดหมู่รายจ่าย' : 'ตัวเลือกรายการหัก'}" name="name" maxlength="60" value="${escAttr(item.name)}" required><button class="button button-outline" type="submit">บันทึกชื่อ</button><button class="button setting-delete-button" type="button" data-setting-delete="${kind}" data-setting-id="${esc(item.id)}" aria-label="ลบ ${esc(item.name)}">ลบ</button></form>`).join('') : '<p class="settings-empty">ยังไม่มีตัวเลือก เพิ่มรายการใหม่ได้จากช่องด้านบน</p>';
+    };
+    renderRows(settingsState.expenseCategories || [], 'category', 'expenseCategorySettingsList');
+    renderRows(settingsState.deductionOptions || [], 'deduction', 'deductionOptionSettingsList');
+  }
+  function animateReorder(list, row, target, afterTarget, selector) {
+    if (!target || target === row || target.parentElement !== list) return;
+    const before = new Map([...list.querySelectorAll(selector)].map((item) => [item, item.getBoundingClientRect().top]));
+    list.insertBefore(row, afterTarget ? target.nextSibling : target);
+    for (const item of list.querySelectorAll(selector)) {
+      const delta = before.get(item) - item.getBoundingClientRect().top;
+      if (!delta) continue;
+      item.style.transition = 'none';
+      item.style.transform = `translateY(${delta}px)`;
+      requestAnimationFrame(() => {
+        item.style.transition = '';
+        item.style.transform = '';
+      });
+    }
+  }
+  function moveSettingRow(row, target, afterTarget = false) {
+    animateReorder(row.parentElement, row, target, afterTarget, '.setting-row');
+  }
+  function writeSettings(change, successMessage) {
+    const operation = settingsSaveQueue.then(async () => {
+      const next = JSON.parse(JSON.stringify(settingsState));
+      change(next);
+      const response = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'บันทึกการตั้งค่าไม่สำเร็จ');
+      settingsState = result.settings;
+      try { localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settingsState)); } catch { /* File settings remain the source of truth. */ }
+      renderSettings();
+      renderExpenseCategoryOptions($('expenseCategory').value, $('expenseCategory').selectedOptions[0]?.dataset.categoryId || '');
+      render();
+      toast(successMessage);
+      return true;
+    }).catch((error) => { toast(error.message || 'บันทึกการตั้งค่าไม่สำเร็จ'); return false; });
+    settingsSaveQueue = operation;
+    return operation;
+  }
+  async function loadSettings() {
+    try {
+      const response = await fetch('/api/settings', { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok || !result.settings) throw new Error(result.error || 'อ่านการตั้งค่าไม่สำเร็จ');
+      settingsState = result.settings;
+      try { localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settingsState)); } catch { /* Optional settings recovery cache. */ }
+    } catch {
+      try {
+        const cached = JSON.parse(localStorage.getItem(SETTINGS_CACHE_KEY) || 'null');
+        if (cached?.version === 1 && Array.isArray(cached.expenseCategories) && Array.isArray(cached.deductionOptions)) settingsState = cached;
+      } catch { /* Use built-in defaults when there is no local settings cache. */ }
+    }
+    renderSettings();
+    renderExpenseCategoryOptions();
+  }
   function incomeForMonth(selectedMonth) {
     let income = state.income;
     for (const entry of state.incomeHistory || []) {
@@ -126,6 +223,7 @@
   }
   async function loadData() {
     try {
+      await loadSettings();
       setStatus(`กำลังอ่าน ${state.profile?.name || 'โปรไฟล์'}…`, 'loading');
       const profileResponse = await fetch('/api/profiles', { cache: 'no-store' });
       const profileResult = await profileResponse.json();
@@ -150,15 +248,18 @@
   }
   function switchView(view) {
     const isDashboard = view === 'dashboard';
+    const isSettings = view === 'settings';
     $('overview').classList.toggle('dashboard-active', isDashboard);
-    $('recordSummary').hidden = isDashboard;
-    $('recordView').hidden = isDashboard;
+    $('overview').classList.toggle('settings-active', isSettings);
+    $('recordSummary').hidden = isDashboard || isSettings;
+    $('recordView').hidden = isDashboard || isSettings;
     $('dashboardView').hidden = !isDashboard;
+    $('settingsView').hidden = !isSettings;
     $('chartControls').hidden = !isDashboard;
     document.querySelectorAll('[data-view]').forEach((link) => link.classList.toggle('active', link.dataset.view === view));
-    const title = isDashboard ? 'My Finance Dashboard' : 'My Finance Record';
+    const title = isDashboard ? 'My Finance Dashboard' : isSettings ? 'Setting' : 'My Finance Record';
     $('pageTitle').textContent = title; $('pageCrumb').textContent = title;
-    $('pageDescription').textContent = isDashboard ? 'ภาพรวมรายรับ รายจ่าย และเงินคงเหลือของเดือนที่เลือก' : 'จัดการรายรับ รายการหัก และบันทึกรายจ่ายของคุณ';
+    $('pageDescription').textContent = isDashboard ? 'ภาพรวมรายรับ รายจ่าย และเงินคงเหลือของเดือนที่เลือก' : isSettings ? 'จัดการตัวเลือกสำหรับบันทึกรายการใหม่ โดยข้อมูลย้อนหลังจะไม่ถูกเปลี่ยน' : 'จัดการรายรับ รายการหัก และบันทึกรายจ่ายของคุณ';
     render();
   }
   function render() {
@@ -311,15 +412,16 @@
   }
   function openExpense(item) {
     $('expenseForm').reset(); $('expenseId').value = item?.id || '';
-    setMoneyInput('expenseAmount', item?.amount ?? ''); $('expenseCategory').value = categoryLabel(item?.category || 'อาหาร');
+    setMoneyInput('expenseAmount', item?.amount ?? '');
+    renderExpenseCategoryOptions(item ? categoryLabel(item.category || item.title || '') : '', item?.categoryId || '');
     setDateField('expenseDate', item?.date || localDate(today)); $('expenseNote').value = item?.note || '';
     $('expenseDialogTitle').textContent = item ? 'แก้ไขรายจ่าย' : 'เพิ่มรายจ่าย'; $('expenseDialog').showModal(); $('expenseCategory').focus();
   }
   function openDeduction(item) {
-    $('deductionForm').reset(); $('deductionId').value = item?.id || ''; $('deductionNameInput').value = item?.name || '';
+    $('deductionForm').reset(); $('deductionId').value = item?.id || ''; renderDeductionOptions(item || null);
     setMoneyInput('deductionAmountInput', item ? deductionForMonth(item, selectedMonth()) : ''); setMonthField('deductionEffectiveMonth', selectedMonth());
     $('deductionDialogTitle').textContent = item ? 'แก้ไขรายการหัก' : 'เพิ่มรายการหัก';
-    $('deductionDialog').showModal(); $('deductionNameInput').focus();
+    $('deductionDialog').showModal(); $('deductionOptionSelect').focus();
   }
   async function downloadData() {
     try {
@@ -375,16 +477,143 @@
     } catch (error) { toast(error.message || 'อ่านไฟล์ JSON ไม่สำเร็จ'); }
     $('importFile').value = '';
   }
+  async function previewKplusFile(file) {
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (parsed?.source !== 'K_PLUS' || parsed?.currency !== 'THB' || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.report_date || '') || !Array.isArray(parsed.transactions) || !parsed.transactions.length) {
+        throw new Error('ไฟล์ต้องเป็น K PLUS JSON ที่มี source, currency, report_date และ transactions');
+      }
+      if (!settingsState.expenseCategories.length) throw new Error('กรุณาเพิ่มหมวดหมู่รายจ่ายใน Setting ก่อนนำเข้า');
+      if (parsed.transactions.some((item) => !item || !/^\d{4}-\d{2}-\d{2}$/.test(item.transaction_date || '') || !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(item.transaction_time || '') || typeof item.account !== 'string' || !Number.isFinite(Number(item.amount)) || Number(item.amount) <= 0 || !Number.isFinite(Number(item.fee ?? 0)) || Number(item.fee ?? 0) < 0 || !Number.isFinite(Number(item.available_balance)) || Number(item.available_balance) < 0)) {
+        throw new Error('ข้อมูลธุรกรรมมีวันที่ เวลา หรือจำนวนเงินไม่ถูกต้อง');
+      }
+      pendingKplusReport = parsed;
+      const select = $('kplusCategorySelect');
+      select.innerHTML = settingsState.expenseCategories.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
+      const defaultCategory = settingsState.expenseCategories.find((item) => item.name === 'ค่าใช้จ่ายอื่นๆ') || settingsState.expenseCategories[0];
+      select.value = defaultCategory.id;
+      $('kplusPreviewSummary').textContent = `${parsed.account_alias || 'K PLUS'} · วันที่รายงาน ${formatDate(parsed.report_date)} · ${parsed.transactions.length.toLocaleString('th-TH')} รายการ`;
+      const shown = parsed.transactions.slice(0, 8);
+      const total = parsed.transactions.reduce((sum, item) => sum + Number(item.amount) + Number(item.fee || 0), 0);
+      $('kplusTransactionPreview').innerHTML = `${shown.map((item) => `<div class="kplus-preview-row"><span>${formatDate(item.transaction_date)} · ${esc(item.transaction_time.slice(0, 5))}</span><strong>${amount(Number(item.amount) + Number(item.fee || 0))}</strong></div>`).join('')}${parsed.transactions.length > shown.length ? `<p>และอีก ${parsed.transactions.length - shown.length} รายการ</p>` : ''}<div class="kplus-preview-total"><span>ยอดรวมที่จะเพิ่ม</span><strong>${amount(total)}</strong></div>`;
+      $('kplusPreviewDialog').showModal();
+    } catch (error) {
+      toast(error.message || 'อ่านไฟล์ K PLUS JSON ไม่สำเร็จ');
+    } finally {
+      $('kplusImportFile').value = '';
+    }
+  }
+  async function commitKplusImport() {
+    if (!pendingKplusReport) return;
+    const button = $('confirmKplusImport');
+    button.disabled = true;
+    try {
+      await saveQueue;
+      const response = await fetch('/api/import/kplus', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: pendingKplusReport, categoryId: $('kplusCategorySelect').value, importedAt: localDate(new Date()) })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'นำเข้ารายการ K PLUS ไม่สำเร็จ');
+      state = result.data;
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch { /* Optional recovery cache. */ }
+      render(); profileStatus('นำเข้ารายการแล้ว', 'saved');
+      $('kplusPreviewDialog').close(); pendingKplusReport = null;
+      toast(`เพิ่ม ${result.added} รายการ · ข้ามรายการซ้ำ ${result.skipped} · ${result.fileName}`);
+    } catch (error) {
+      toast(error.message || 'นำเข้ารายการ K PLUS ไม่สำเร็จ');
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   document.querySelectorAll('[data-view]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); switchView(link.dataset.view); }));
+  $('settingsView').addEventListener('submit', async (event) => {
+    const form = event.target.closest('form');
+    if (!form) return;
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const name = form.elements.name?.value.trim();
+    if (form.id === 'addExpenseCategoryForm') {
+      const saved = await writeSettings((next) => next.expenseCategories.push({ id: crypto.randomUUID(), name }), 'เพิ่มหมวดหมู่แล้ว');
+      if (saved) form.reset();
+      return;
+    }
+    if (form.id === 'addDeductionOptionForm') {
+      const saved = await writeSettings((next) => next.deductionOptions.push({ id: crypto.randomUUID(), name }), 'เพิ่มตัวเลือกรายการหักแล้ว');
+      if (saved) form.reset();
+      return;
+    }
+    const kind = form.dataset.settingForm;
+    const id = form.dataset.settingId;
+    if (!kind || !id || !name) return;
+    const listName = kind === 'category' ? 'expenseCategories' : 'deductionOptions';
+    await writeSettings((next) => {
+      const item = next[listName].find((entry) => entry.id === id);
+      if (item) item.name = name;
+    }, 'บันทึกชื่อตัวเลือกแล้ว');
+  });
+  $('settingsView').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-setting-delete]');
+    if (!button) return;
+    const kind = button.dataset.settingDelete, id = button.dataset.settingId;
+    const listName = kind === 'category' ? 'expenseCategories' : 'deductionOptions';
+    const item = settingsState[listName].find((entry) => entry.id === id);
+    if (!item) return;
+    const detail = kind === 'category' ? 'รายจ่ายที่บันทึกไว้จะยังคงแสดงหมวดหมู่เดิม' : 'รายการหักที่บันทึกไว้จะยังคงชื่อและประวัติเดิม';
+    askDelete(`ลบตัวเลือก “${item.name}” หรือไม่? ${detail}`, () => {
+      writeSettings((next) => { next[listName] = next[listName].filter((entry) => entry.id !== id); }, 'ลบตัวเลือกแล้ว');
+    });
+  });
+  $('settingsView').addEventListener('pointerdown', (event) => {
+    const handle = event.target.closest('[data-setting-drag]');
+    if (!handle) return;
+    const row = handle.closest('.setting-row');
+    if (!row) return;
+    event.preventDefault();
+    draggedSetting = { handle, row, list: row.parentElement, kind: row.dataset.settingForm, originalOrder: [...row.parentElement.querySelectorAll('.setting-row')].map((item) => item.dataset.settingId), pointerId: event.pointerId };
+    row.classList.add('dragging'); document.body.classList.add('setting-reordering');
+    handle.setPointerCapture(event.pointerId);
+  });
+  $('settingsView').addEventListener('pointermove', (event) => {
+    if (!draggedSetting || event.pointerId !== draggedSetting.pointerId) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.setting-row');
+    if (!target || target.parentElement !== draggedSetting.list || target === draggedSetting.row) return;
+    const rect = target.getBoundingClientRect();
+    moveSettingRow(draggedSetting.row, target, event.clientY >= rect.top + rect.height / 2);
+  });
+  $('settingsView').addEventListener('pointerup', (event) => {
+    if (!draggedSetting || event.pointerId !== draggedSetting.pointerId) return;
+    const { row, list, kind, originalOrder } = draggedSetting;
+    row.classList.remove('dragging'); document.body.classList.remove('setting-reordering'); draggedSetting = null;
+    const order = [...list.querySelectorAll('.setting-row')].map((item) => item.dataset.settingId);
+    const property = kind === 'category' ? 'expenseCategories' : 'deductionOptions';
+    if (order.every((id, index) => id === originalOrder[index])) return;
+    writeSettings((next) => {
+      const orderById = new Map(order.map((id, index) => [id, index]));
+      next[property].sort((a, b) => orderById.get(a.id) - orderById.get(b.id));
+    }, 'บันทึกลำดับตัวเลือกแล้ว');
+  });
+  $('settingsView').addEventListener('pointercancel', (event) => {
+    if (!draggedSetting || event.pointerId !== draggedSetting.pointerId) return;
+    const { row, list, originalOrder } = draggedSetting;
+    for (const id of originalOrder) { const item = [...list.querySelectorAll('.setting-row')].find((candidate) => candidate.dataset.settingId === id); if (item) list.append(item); }
+    row.classList.remove('dragging'); document.body.classList.remove('setting-reordering'); draggedSetting = null;
+  });
   $('databaseToggle').addEventListener('click', () => {
     const open = $('databaseGroup').classList.toggle('open');
     $('databaseToggle').setAttribute('aria-expanded', String(open));
     $('databaseToggle').querySelector('.database-chevron').textContent = open ? '⌃' : '⌄';
   });
   $('exportData').addEventListener('click', downloadData);
-  $('importData').addEventListener('click', () => $('importFile').click());
+  $('importData').addEventListener('click', () => $('importTypeDialog').showModal());
+  document.querySelectorAll('[data-import-choice]').forEach((button) => button.addEventListener('click', () => {
+    $('importTypeDialog').close();
+    if (button.dataset.importChoice === 'kplus') $('kplusImportFile').click(); else $('importFile').click();
+  }));
   $('importFile').addEventListener('change', (event) => { if (event.target.files[0]) importData(event.target.files[0]); });
+  $('kplusImportFile').addEventListener('change', (event) => { if (event.target.files[0]) previewKplusFile(event.target.files[0]); });
+  $('kplusPreviewForm').addEventListener('submit', (event) => { event.preventDefault(); if ($('kplusPreviewForm').reportValidity()) commitKplusImport(); });
   $('profileSelect').addEventListener('change', async (event) => {
     await saveQueue;
     const response = await fetch('/api/profiles/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) });
@@ -534,10 +763,12 @@
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); }));
   $('expenseForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('expenseForm').reportValidity()) return;
+    if (!$('expenseCategory').value) { toast('ไปที่ Setting เพื่อเพิ่มหมวดหมู่รายจ่ายก่อน'); return; }
     if (moneyNumber($('expenseAmount').value) <= 0) { $('expenseAmount').setCustomValidity('จำนวนเงินต้องมากกว่า 0'); $('expenseAmount').reportValidity(); $('expenseAmount').setCustomValidity(''); return; }
     const id = $('expenseId').value || crypto.randomUUID();
     const category = $('expenseCategory').value;
-    const entry = { id, title: category, amount: moneyNumber($('expenseAmount').value), category, date: dateFieldValue('expenseDate'), note: $('expenseNote').value.trim() };
+    const categoryId = $('expenseCategory').selectedOptions[0]?.dataset.categoryId || '';
+    const entry = { id, title: category, amount: moneyNumber($('expenseAmount').value), category, ...(categoryId ? { categoryId } : {}), date: dateFieldValue('expenseDate'), note: $('expenseNote').value.trim() };
     const index = state.expenses.findIndex((item) => item.id === id);
     if (index >= 0) state.expenses[index] = entry; else state.expenses.push(entry);
     persist(); render(); $('expenseDialog').close(); toast(index >= 0 ? 'แก้ไขรายจ่ายแล้ว' : 'เพิ่มรายจ่ายแล้ว');
@@ -552,11 +783,12 @@
   $('deductionForm').addEventListener('submit', (event) => {
     event.preventDefault(); if (!$('deductionForm').reportValidity()) return;
     const id = $('deductionId').value || crypto.randomUUID();
-    const entry = { id, name: $('deductionNameInput').value.trim() || 'รายการหัก', amount: moneyNumber($('deductionAmountInput').value) };
+    const selectedOption = settingsState.deductionOptions.find((option) => option.id === $('deductionOptionSelect').value);
+    if (!selectedOption && !$('deductionId').value) { toast('ไปที่ Setting เพื่อเพิ่มตัวเลือกรายการหักก่อน'); return; }
+    const entry = { id, name: selectedOption?.name || '', optionId: selectedOption?.id || '', amount: moneyNumber($('deductionAmountInput').value) };
     const index = state.deductions.findIndex((item) => item.id === id);
     if (index >= 0) {
       const current = state.deductions[index];
-      current.name = entry.name;
       current.history = (current.history || []).filter((item) => item.month !== monthFieldValue('deductionEffectiveMonth'));
       current.history.push({ month: monthFieldValue('deductionEffectiveMonth'), amount: entry.amount });
       current.history.sort((a, b) => a.month.localeCompare(b.month));
@@ -621,7 +853,7 @@
     if (!target || target.dataset.deductionRow === draggedDeductionId) return;
     event.preventDefault();
     const bounds = target.getBoundingClientRect();
-    $('deductionList').insertBefore(draggedDeductionRow, event.clientY < bounds.top + bounds.height / 2 ? target : target.nextSibling);
+    animateReorder($('deductionList'), draggedDeductionRow, target, event.clientY >= bounds.top + bounds.height / 2, '[data-deduction-row]');
   });
   $('deductionList').addEventListener('drop', (event) => {
     if (!draggedDeductionId) return;

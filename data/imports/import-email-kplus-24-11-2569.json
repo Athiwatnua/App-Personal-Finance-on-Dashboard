@@ -1,0 +1,40 @@
+{
+  "source": "K_PLUS",
+  "account_alias": "Main Account",
+  "currency": "THB",
+  "report_date": "2026-11-19",
+  "transactions": [
+    {
+      "transaction_date": "2026-11-19",
+      "transaction_time": "07:52:56",
+      "account": "xxx-x-x0507-x",
+      "amount": 300,
+      "fee": 0,
+      "available_balance": 742.42
+    },
+    {
+      "transaction_date": "2026-11-19",
+      "transaction_time": "13:51:46",
+      "account": "xxx-x-x0507-x",
+      "amount": 62,
+      "fee": 0,
+      "available_balance": 680.42
+    },
+    {
+      "transaction_date": "2026-11-19",
+      "transaction_time": "14:11:23",
+      "account": "xxx-x-x0507-x",
+      "amount": 27,
+      "fee": 0,
+      "available_balance": 653.42
+    },
+    {
+      "transaction_date": "2026-11-19",
+      "transaction_time": "14:13:21",
+      "account": "xxx-x-x0507-x",
+      "amount": 44,
+      "fee": 0,
+      "available_balance": 609.42
+    }
+  ]
+}
